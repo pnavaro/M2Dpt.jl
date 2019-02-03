@@ -1,5 +1,9 @@
 module M2Dpt
 
-greet() = print("Hello World!")
+export Mesh
+include("mesh.jl")
 
-end # module
+export Fields
+include("fields.jl")
+
+end 
