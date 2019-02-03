@@ -1,0 +1,4 @@
+name = "M2Dpt"
+uuid = "db5a107a-27d7-11e9-1091-31e64280bbb2"
+authors = ["Pierre Navaro <navaro@math.cnrs.fr>"]
+version = "0.1.0"
