@@ -14,6 +14,9 @@ mutable struct Fields
     dVxdtauVx0 ::  Array{Float64,2}
     dVydtauVy0 ::  Array{Float64,2}
 
+    #[xc2,  yc2] = ndgrid(xc,yc);
+    #[xvx2,yvx2] = ndgrid(xn,yc);
+    #[xvy2,yvy2] = ndgrid(xc,yn);
 
     function Fields( mesh, Vbc, r, Tamp  )
 
@@ -22,8 +25,8 @@ mutable struct Fields
 
         Vx         =  zeros(Float64, (nx+1,ny))
         Vy         =  zeros(Float64, (nx,ny+1))
-        Vx        .=  Vbc * mesh.xn .* transpose(mesh.yc) ./Lx
-        Vy        .= -Vbc * mesh.xc .* transpose(mesh.yn) ./Ly
+        Vx        .=  Vbc * mesh.xn .* ones(ny)' ./Lx
+        Vy        .= -Vbc * ones(nx).* transpose(mesh.yn) ./Ly
         T          =  zeros(Float64,(nx  ,ny  ))
         P          =  zeros(Float64,(nx  ,ny  ))
         etac       =   ones(Float64,(nx  ,ny  ))
