@@ -20,8 +20,10 @@ mutable struct Fields
         nx, Lx, dx = mesh.nx, mesh.Lx, mesh.dx
         ny, Ly, dy = mesh.ny, mesh.Ly, mesh.dy
 
-        Vx         =  Vbc * mesh.xn .* transpose(mesh.yc) ./Lx
-        Vy         = -Vbc * mesh.xc .* transpose(mesh.yn) ./Ly
+        Vx         =  zeros(Float64, (nx+1,ny))
+        Vy         =  zeros(Float64, (nx,ny+1))
+        Vx        .=  Vbc * mesh.xn .* transpose(mesh.yc) ./Lx
+        Vy        .= -Vbc * mesh.xc .* transpose(mesh.yn) ./Ly
         T          =  zeros(Float64,(nx  ,ny  ))
         P          =  zeros(Float64,(nx  ,ny  ))
         etac       =   ones(Float64,(nx  ,ny  ))
