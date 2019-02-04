@@ -1,7 +1,8 @@
 using Printf
-using M2Dpt
 using LinearAlgebra
 
+include("../src/mesh.jl")
+include("../src/fields.jl")
 include("physics.jl")
 include("numerics.jl")
 
@@ -19,23 +20,29 @@ function solve( m :: Mesh, f :: Fields )
     
     errs  = []
 
-    Vx_exp = zeros(Float64,(nx+1,ny+2))
-    Vy_exp = zeros(Float64,(nx+2,ny+1))
-    etav   = zeros(Float64,(nx+1,ny+1)) 
-    Exyv   = zeros(Float64,(nx+1,ny+1)) 
-    Exyc   = zeros(Float64,(nx,ny)) 
-    divV   = zeros(Float64,(nx,ny)) 
-    Exxc   = zeros(Float64,(nx,ny)) 
-    Eyyc   = zeros(Float64,(nx,ny)) 
-    Eii2   = zeros(Float64,(nx,ny)) 
-    Sxx    = zeros(Float64,(nx,ny)) 
-    Syy    = zeros(Float64,(nx,ny)) 
-    Txy    = zeros(Float64,(nx,ny)) 
-    Hs     = zeros(Float64,(nx,ny)) 
+    Vx_exp  = zeros(Float64,(nx+1,ny+2))
+    Vy_exp  = zeros(Float64,(nx+2,ny+1))
+    etav    = zeros(Float64,(nx+1,ny+1)) 
+    Exyv    = zeros(Float64,(nx+1,ny+1)) 
+    Exyc    = zeros(Float64,(nx,ny)) 
+    divV    = zeros(Float64,(nx,ny)) 
+    Exxc    = zeros(Float64,(nx,ny)) 
+    Eyyc    = zeros(Float64,(nx,ny)) 
+    Eii2    = zeros(Float64,(nx,ny)) 
+    Sxx     = zeros(Float64,(nx,ny)) 
+    Syy     = zeros(Float64,(nx,ny)) 
+    Txy     = similar(Exyv)
+    Hs      = zeros(Float64,(nx,ny)) 
+    To      = similar(f.T)
+    dPdtauP = similar(divV)
+    dTdtauT = similar(Hs)
+    dtauP   = similar(f.etac)
+    dtauVx  = zeros(Float64,(nx-1,ny))
+    dtauVy  = zeros(Float64,(nx,ny-1))
 
     for it = 1:nt # Physical timesteps
 
-        To    = f.T  # temperature from previous step (for backward-Euler integration)
+        To .= f.T # temperature from previous step (for backward-Euler integration)
 
         @show time += dtT # update physical time
 
@@ -50,8 +57,8 @@ function solve( m :: Mesh, f :: Fields )
             f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0 
 
             #  Kinematics
-            Vx_exp .= hcat(f.Vx[:,1], f.Vx, f.Vx[:,end])  
-            Vy_exp .= vcat(f.Vy[1,:]', f.Vy, f.Vy[end,:]')
+  @views    Vx_exp .= hcat(f.Vx[:,1], f.Vx, f.Vx[:,end])  
+  @views    Vy_exp .= vcat(f.Vy[1,:]', f.Vy, f.Vy[end,:]')
 
             divV .= diff(f.Vx,dims=1)/dx .+ diff(f.Vy,dims=2)/dy
             Exxc .= diff(f.Vx,dims=1)/dx .- 1/2*divV
@@ -59,7 +66,7 @@ function solve( m :: Mesh, f :: Fields )
 
             Exyv .= 0.5*(diff(Vx_exp,dims=2)/dy .+ diff(Vy_exp,dims=1)/dx)
 
-            Exyc .= 0.25*(Exyv[1:end-1,1:end-1] .+ 
+  @views    Exyc .= 0.25*(Exyv[1:end-1,1:end-1] .+ 
                           Exyv[2:end  ,1:end-1] .+ 
                           Exyv[1:end-1,2:end  ] .+ 
                           Exyv[2:end  ,2:end  ])
@@ -69,52 +76,54 @@ function solve( m :: Mesh, f :: Fields )
             # ------ Rheology
             # physical viscosity
             etac_phys = Eii2.^mpow.*exp.( -f.T.*(1 ./ (1 .+ f.T./T0)) ) 
+
             # numerical shear viscosity
             f.etac .= exp.(rel*log.(etac_phys) .+ (1-rel)*log.(f.etac)) 
 
             # expand viscosity fom cell centroids to vertices
+            fill!(etav,0.0)
 
-            etav[2:end-1,2:end-1] .= 0.25*(f.etac[1:end-1,1:end-1] 
+  @views    etav[2:end-1,2:end-1] .= 0.25*(f.etac[1:end-1,1:end-1] 
                                          + f.etac[2:end,2:end] 
                                          + f.etac[1:end-1,2:end] 
                                          + f.etac[2:end,1:end-1])
 
-            etav[:      ,[1 end]] .= etav[:        ,[2 end-1]]
-            etav[[1 end],:      ] .= etav[[2 end-1],:        ]
+  @views    etav[:      ,[1 end]] .= etav[:        ,[2 end-1]]
+  @views    etav[[1 end],:      ] .= etav[[2 end-1],:        ]
 
             # ------ Pseudo-Time steps ------
 
-            dtauP   = tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
+            dtauP   .= tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
 
-            dtauVx  = tetv * 1/4.1 * (min(dx,dy)^2 ./ ( 
+  @views    dtauVx  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ ( 
                       0.5*(   f.etac[2:end,:] 
                            .+ f.etac[1:end-1,:]) ))/(1+eta_b)
 
-            dtauVy  = tetv * 1/4.1 * (min(dx,dy)^2 ./(
-                      0.5*(  f.etac[:,2:end] 
+  @views    dtauVy  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ (
+                       0.5*(  f.etac[:,2:end] 
                            .+ f.etac[:,1:end-1]) ))/(1+eta_b)
 
-            dtauT   = tetT * 1/4.1 * min(dx,dy)^2
+            dtauT    = tetT * 1/4.1 * min(dx,dy)^2
 
             # ------ Fluxes
 
             f.qx[2:end-1,:] .= -diff(f.T,dims=1)/dx
             f.qy[:,2:end-1] .= -diff(f.T,dims=2)/dy
 
-            Sxx = -f.P .+ 2 * f.etac .* (Exxc .+ eta_b*divV)
-            Syy = -f.P .+ 2 * f.etac .* (Eyyc .+ eta_b*divV)
+            Sxx .= -f.P .+ 2 * f.etac .* (Exxc .+ eta_b*divV)
+            Syy .= -f.P .+ 2 * f.etac .* (Eyyc .+ eta_b*divV)
 
-            Txy = 2 * etav   .* Exyv
-            Hs  = 4 * f.etac .* Eii2
+            Txy .= 2 * etav   .* Exyv
+            Hs  .= 4 * f.etac .* Eii2
 
             # ------ Residuals
 
-            f.dVxdtauVx .= diff(Txy[2:end-1,:],dims=2)/dy .+ diff(Sxx,dims=1)/dx
-            f.dVydtauVy .= diff(Txy[:,2:end-1],dims=1)/dx .+ diff(Syy,dims=2)/dy
+   @views   f.dVxdtauVx .= diff(Txy[2:end-1,:],dims=2)/dy .+ diff(Sxx,dims=1)/dx
+   @views   f.dVydtauVy .= diff(Txy[:,2:end-1],dims=1)/dx .+ diff(Syy,dims=2)/dy
 
-            dPdtauP     = - divV
-            dTdtauT     = (To-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
-                                       .+  diff(f.qy,dims=2)/dy) .+ Hs
+            dPdtauP    .= - divV
+            dTdtauT    .= (To.-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
+                                        .+  diff(f.qy,dims=2)/dy) .+ Hs
             # ------ Updates
 
             # update with damping
@@ -130,16 +139,16 @@ function solve( m :: Mesh, f :: Fields )
                 err_fp = norm(dPdtauP)/length(dPdtauP)
                 err_fT = norm(dTdtauT)/length(dTdtauT)
                 err    = [err_fu, err_fp, err_fT]
-
-                if err_fu < epsi
-                    push!(errs, [time,err_fu])
+                push!(errs, [time,err_fu])
+                if max(err...) < epsi
                     break
                 end
 
-               @printf(" iter  = %d    \n", iter)
-               @printf(" f_{u} = %1.3e \n", err_fu)
-               @printf(" f_{p} = %1.3e \n", err_fp)
-               @printf(" f_{T} = %1.3e \n", err_fT)
+                println("-------------------------")
+                @printf(" iter  = %d    \n", iter  )
+                @printf(" f_{u} = %1.3e \n", err_fu)
+                @printf(" f_{p} = %1.3e \n", err_fp)
+                @printf(" f_{T} = %1.3e \n", err_fT)
 
             end
 
@@ -155,6 +164,5 @@ end
 mesh = Mesh( Lx, nx, Ly, ny)
 
 fields = Fields( mesh, Vbc, r, Tamp )
-
 
 @time solve( mesh, fields )
