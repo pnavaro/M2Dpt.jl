@@ -50,15 +50,14 @@ function solve( m :: Mesh, f :: Fields )
             f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0 
 
             #  Kinematics
-            expand!(Vx_exp, f.Vx, 1)  
-            expand!(Vy_exp, f.Vy, 2)
+            Vx_exp .= hcat(f.Vx[:,1], f.Vx, f.Vx[:,end])  
+            Vy_exp .= vcat(f.Vy[1,:]', f.Vy, f.Vy[end,:]')
 
             divV .= diff(f.Vx,dims=1)/dx .+ diff(f.Vy,dims=2)/dy
             Exxc .= diff(f.Vx,dims=1)/dx .- 1/2*divV
             Eyyc .= diff(f.Vy,dims=2)/dy .- 1/2*divV
 
             Exyv .= 0.5*(diff(Vx_exp,dims=2)/dy .+ diff(Vy_exp,dims=1)/dx)
-            
 
             Exyc .= 0.25*(Exyv[1:end-1,1:end-1] .+ 
                           Exyv[2:end  ,1:end-1] .+ 
@@ -115,7 +114,7 @@ function solve( m :: Mesh, f :: Fields )
 
             dPdtauP     = - divV
             dTdtauT     = (To-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
-                                       .+ diff(f.qy,dims=2)/dy) .+ Hs
+                                       .+  diff(f.qy,dims=2)/dy) .+ Hs
             # ------ Updates
 
             # update with damping
@@ -158,4 +157,4 @@ mesh = Mesh( Lx, nx, Ly, ny)
 fields = Fields( mesh, Vbc, r, Tamp )
 
 
-@time err = solve( mesh, fields )
+@time solve( mesh, fields )
