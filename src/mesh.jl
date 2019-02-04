@@ -29,6 +29,3 @@ struct Mesh
 
 end
 
-#[xc2,  yc2] = ndgrid(xc,yc);
-#[xvx2,yvx2] = ndgrid(xn,yc);
-#[xvy2,yvy2] = ndgrid(xc,yn);
