@@ -13,10 +13,12 @@ const mpow  = -(1-1/n)/2     # exponent for strain rate dependent viscosity
 
 function solve_with_loops( m :: Mesh, f :: Fields )
 
-    time   = 0.0
-    dx, dy = mesh.dx, mesh.dy
+    time   = 0.0     :: Float64
+    dx     = mesh.dx :: Float64
+    dy     = mesh.dy :: Float64
 
-    dtT = tetT*1/4.1*min(dx,dy)^2 # explicit timestep for 2D diffusion
+    local  dtT :: Float64
+    dtT = tetT*1.0/4.1*min(dx,dy)^2 # explicit timestep for 2D diffusion
     
     errs  = []
 
@@ -76,8 +78,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             for j = 1:ny, i=1:nx
 
-                dVxdx = (f.Vx[i+1,j]-f.Vx[i,j])/dx
-                dVydy = (f.Vy[i,j+1]-f.Vy[i,j])/dy
+                dVxdx = (f.Vx[i+1,j]-f.Vx[i,j])/dx :: Float64
+                dVydy = (f.Vy[i,j+1]-f.Vy[i,j])/dy :: Float64
 
                 divV[i,j] = dVxdx + dVydy
 
@@ -131,7 +133,9 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             # ------ Pseudo-Time steps ------
 
-            dtauP   .= tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
+            for j = 1:ny, i=1:nx 
+                dtauP[i,j]  = tetp *  4.1 / min(nx,ny)*f.etac[i,j]*(1.0+eta_b)
+            end
 
             for j = 1:ny, i=1:nx-1
                 dtauVx[i,j]  = tetv * 1/4.1 * (min(dx,dy)^2 / ( 
@@ -188,8 +192,18 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # ------ Updates
 
             # update with damping
-            f.Vx[2:end-1,:] .+= dtauVx .* (f.dVxdtauVx .+ dampx.*f.dVxdtauVx0) 
-            f.Vy[:,2:end-1] .+= dtauVy .* (f.dVydtauVy .+ dampy.*f.dVydtauVy0)
+            for j = 1:ny
+                for i = 1:nx-1
+                    f.Vx[i+1,j] += dtauVx[i,j] * (f.dVxdtauVx[i,j] + dampx*f.dVxdtauVx0[i,j]) 
+                end
+            end
+           
+            for j = 1:ny-1
+                for i = 1:nx
+                    f.Vy[i,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] + dampy*f.dVydtauVy0[i,j])
+                end
+            end
+
             f.P             .+= dtauP  .* dPdtauP
             f.T             .+= dtauT  .* dTdtauT
 
@@ -210,12 +224,10 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 @printf(" f_{u} = %1.3e \n", err_fu)
                 @printf(" f_{p} = %1.3e \n", err_fp)
                 @printf(" f_{T} = %1.3e \n", err_fT)
-                return
 
             end
 
         end
-        return
 
 
     end
