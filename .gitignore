@@ -5,3 +5,9 @@ deps/deps.jl
 Manifest.toml
 *.swp
 *.mem
+*.dat
+*.out
+fortran/m2dpt
+*.o
+*.mod
+*.gnu

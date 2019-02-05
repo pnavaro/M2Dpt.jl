@@ -1,5 +1,8 @@
 program m2dpt
 
+    use physics
+    use numerics
+
     implicit none
 
     integer :: i
@@ -35,28 +38,6 @@ program m2dpt
     real(8), allocatable :: dVxdtauVx0(:,:)
     real(8), allocatable :: dVydtauVy0(:,:)
 
-    integer, parameter   :: n      = 3          ! stress exponent for power law rheology
-    real(8), parameter   :: Vbc    = 66.4437    ! boundary velocity difference
-    real(8), parameter   :: Lx     = 0.86038    ! domain size x
-    real(8), parameter   :: Ly     = Lx         ! domain size y
-    real(8), parameter   :: T0     = 49.3269/n  ! initial temperature
-    real(8), parameter   :: r      = 0.0737     ! radius of initial perturbation
-    real(8), parameter   :: Tamp   = 0.1*T0     ! amplitude of initial perturbation
-
-    integer, parameter   :: nx     = 94      ! number of cells x
-    integer, parameter   :: ny     = nx      ! number of cells y
-    integer, parameter   :: nt     = 54      ! number time steps
-    integer, parameter   :: nout   = 100     ! check residual each nout iteration
-    integer, parameter   :: noutp  = 2       ! display graphics each nout time step
-    integer, parameter   :: niter  = 1e5     ! max nonlinear iterations
-    real(8), parameter   :: epsi   = 1e-5    ! non-linear tolerance
-    real(8), parameter   :: tetp   = 0.5     ! reduction of PT steps for pressure
-    real(8), parameter   :: tetv   = 0.5     ! reduction of PT steps for velocity
-    real(8), parameter   :: tetT   = 0.5     ! reduction of physical time step for temperature
-    real(8), parameter   :: rel    = 1e-1    ! relaxation factor for non-linear viscosity
-    real(8), parameter   :: Vdamp  = 4.0     ! velocity damping for momentum equations
-    real(8), parameter   :: eta_b  = 1.0     ! numerical compressibility
-
     real(8), parameter   :: dampx = 1*(1-Vdamp/nx)   ! velocity damping for x-momentum equation
     real(8), parameter   :: dampy = 1*(1-Vdamp/ny)   ! velocity damping for y-momentum equation
     real(8), parameter   :: mpow  = -(1d0-1d0/n)/2d0 ! exponent for strain rate dependent viscosity
@@ -80,7 +61,6 @@ program m2dpt
     real(8), allocatable :: dtauP   (:,:)
     real(8), allocatable :: dtauVx  (:,:)
     real(8), allocatable :: dtauVy  (:,:)
-
 
     dx = Lx/nx
     dy = Ly/ny
@@ -113,11 +93,11 @@ program m2dpt
         end do
     end do
 
-    allocate(T         (nx  ,ny  )); T    = 0d0
-    allocate(P         (nx  ,ny  )); P    = 0d0
-    allocate(etac      (nx  ,ny  )); etac = 1d0
-    allocate(qx        (nx+1,ny  )); qx   = 0d0
-    allocate(qy        (nx  ,ny+1)); qy   = 0d0
+    allocate(T         (nx  ,ny  )); T          = 0d0
+    allocate(P         (nx  ,ny  )); P          = 0d0
+    allocate(etac      (nx  ,ny  )); etac       = 1d0
+    allocate(qx        (nx+1,ny  )); qx         = 0d0
+    allocate(qy        (nx  ,ny+1)); qy         = 0d0
     allocate(dVxdtauVx (nx-1,ny  )); dVxdtauVx  = 0d0
     allocate(dVydtauVy (nx  ,ny-1)); dVydtauVy  = 0d0
     allocate(dVxdtauVx0(nx-1,ny  )); dVxdtauVx0 = 0d0
@@ -198,13 +178,10 @@ program m2dpt
                 divV(i,j) = dVxdx + dVydy
 
                 Exxc(i,j) = dVxdx - 0.5d0 * (dVxdx + dVydy)
-
                 Eyyc(i,j) = dVydy - 0.5d0 * (dVxdx + dVydy)
 
             end do
             end do
-
-
 
             do j=1,ny+1
             do i=1,nx+1
@@ -225,7 +202,6 @@ program m2dpt
                 Eii2(i,j) = 0.5d0*(Exxc(i,j)**2 + Eyyc(i,j)**2) + Exyc(i,j)**2 ! strain rate invariant
             end do 
             end do 
-
 
             ! ------ Rheology
 
