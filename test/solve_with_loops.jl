@@ -22,23 +22,25 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
     Vx_exp  = zeros(Float64,(nx+1,ny+2))
     Vy_exp  = zeros(Float64,(nx+2,ny+1))
-    etav    = zeros(Float64,(nx+1,ny+1)) 
-    Exyv    = zeros(Float64,(nx+1,ny+1)) 
-    Exyc    = zeros(Float64,(nx,ny)) 
-    divV    = zeros(Float64,(nx,ny)) 
-    Exxc    = zeros(Float64,(nx,ny)) 
-    Eyyc    = zeros(Float64,(nx,ny)) 
-    Eii2    = zeros(Float64,(nx,ny)) 
-    Sxx     = zeros(Float64,(nx,ny)) 
-    Syy     = zeros(Float64,(nx,ny)) 
-    Txy     = similar(Exyv)
-    Hs      = zeros(Float64,(nx,ny)) 
-    To      = similar(f.T)
-    dPdtauP = similar(divV)
-    dTdtauT = similar(Hs)
-    dtauP   = similar(f.etac)
-    dtauVx  = zeros(Float64,(nx-1,ny))
-    dtauVy  = zeros(Float64,(nx,ny-1))
+    etav    = zeros(Float64,(nx+1,ny+1))
+    Exyv    = zeros(Float64,(nx+1,ny+1))
+    Exyc    = zeros(Float64,(nx,ny))    
+    divV    = zeros(Float64,(nx,ny))    
+    Exxc    = zeros(Float64,(nx,ny))    
+    Eyyc    = zeros(Float64,(nx,ny))    
+    Eii2    = zeros(Float64,(nx,ny))    
+    Sxx     = zeros(Float64,(nx,ny))    
+    Syy     = zeros(Float64,(nx,ny))    
+    Txy     = similar(Exyv)             
+    Hs      = zeros(Float64,(nx,ny))    
+    To      = similar(f.T)    
+    dPdtauP = similar(divV)             
+    dTdtauT = similar(Hs)               
+    dtauP   = similar(f.etac)           
+    dtauVx  = zeros(Float64,(nx-1,ny))  
+    dtauVy  = zeros(Float64,(nx,ny-1))  
+
+    @show sum(f.T)
 
     for it = 1:nt # Physical timesteps
 
@@ -47,8 +49,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
         @show time += dtT # update physical time
 
         for iter = 1:niter # Pseudo-Transient cycles
-
-    #        err   = [Vx(:); Vy(:); P(:); T(:); etac(:)];
 
             # used for damping x momentum residuals
             f.dVxdtauVx0 .= f.dVxdtauVx .+ dampx .* f.dVxdtauVx0  
@@ -86,7 +86,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 Eyyc[i,j] = dVydy - 0.5 * (dVxdx + dVydy)
             end
 
-
             for j=1:ny+1, i=1:nx+1
                 Exyv[i,j] = 0.5*(  (Vx_exp[i,j+1]-Vx_exp[i,j])/dy 
                                  + (Vy_exp[i+1,j]-Vy_exp[i,j])/dx )
@@ -101,8 +100,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc[i,j]^2 # strain rate invariant
             end 
 
-            # ------ Rheology
 
+            # ------ Rheology
             for j=1:ny, i=1:nx
 
                  # physical viscosity
@@ -179,9 +178,13 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 f.dVydtauVy[i,j] = (Txy[i+1,j+1]-Txy[i,j+1])/dx + (Syy[i,j+1]-Syy[i,j])/dy
             end
 
-            dPdtauP    .= - divV
-            dTdtauT    .= (To.-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
-                                        .+  diff(f.qy,dims=2)/dy) .+ Hs
+             
+            for j=1:ny, i=1:nx
+                dPdtauP[i,j] = - divV[i,j]
+                dTdtauT[i,j] = ((To[i,j]-f.T[i,j])/dtT 
+                               - ((f.qx[i+1,j]-f.qx[i,j])/dx + (f.qy[i,j+1]-f.qy[i,j])/dy) 
+                               + Hs[i,j])
+            end
             # ------ Updates
 
             # update with damping
@@ -207,6 +210,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 @printf(" f_{u} = %1.3e \n", err_fu)
                 @printf(" f_{p} = %1.3e \n", err_fp)
                 @printf(" f_{T} = %1.3e \n", err_fT)
+                return
 
             end
 
