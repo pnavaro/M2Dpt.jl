@@ -57,8 +57,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0 
 
             #  Kinematics
-  #@views    Vx_exp .= hcat(f.Vx[:,1], f.Vx, f.Vx[:,end])  
-  #@views    Vy_exp .= vcat(f.Vy[1,:]', f.Vy, f.Vy[end,:]')
 
             for i = 1:nx+1
                 Vx_exp[i,1]  = f.Vx[i,1]
@@ -76,75 +74,110 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 Vy_exp[nx+2,j] = f.Vy[nx,j]
             end
 
-            divV .= diff(f.Vx,dims=1)/dx .+ diff(f.Vy,dims=2)/dy
-            Exxc .= diff(f.Vx,dims=1)/dx .- 1/2*divV
-            Eyyc .= diff(f.Vy,dims=2)/dy .- 1/2*divV
+            for j = 1:ny, i=1:nx
 
-            Exyv .= 0.5*(diff(Vx_exp,dims=2)/dy .+ diff(Vy_exp,dims=1)/dx)
+                dVxdx = (f.Vx[i+1,j]-f.Vx[i,j])/dx
+                dVydy = (f.Vy[i,j+1]-f.Vy[i,j])/dy
 
-  #@views    Exyc .= 0.25*(Exyv[1:end-1,1:end-1] .+ 
-  #                        Exyv[2:end  ,1:end-1] .+ 
-  #                        Exyv[1:end-1,2:end  ] .+ 
-  #                        Exyv[2:end  ,2:end  ])
+                divV[i,j] = dVxdx + dVydy
 
-            for j = 1:ny, j = 1:nx
+                Exxc[i,j] = dVxdx - 0.5 * (dVxdx + dVydy)
+
+                Eyyc[i,j] = dVydy - 0.5 * (dVxdx + dVydy)
+            end
+
+
+            for j=1:ny+1, i=1:nx+1
+                Exyv[i,j] = 0.5*(  (Vx_exp[i,j+1]-Vx_exp[i,j])/dy 
+                                 + (Vy_exp[i+1,j]-Vy_exp[i,j])/dx )
+            end
+
+            for j=1:ny, i=1:nx
                 Exyc[i,j] = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
                                  +Exyv[i,j+1]+Exyv[i+1,j+1])
             end
 
-            Eii2 .= 0.5*(Exxc.^2 .+ Eyyc.^2) .+ Exyc.^2 # strain rate invariant
+            for j=1:ny, i=1:nx
+                Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc[i,j]^2 # strain rate invariant
+            end 
 
             # ------ Rheology
-            # physical viscosity
-            etac_phys = Eii2.^mpow.*exp.( -f.T.*(1 ./ (1 .+ f.T./T0)) ) 
 
-            # numerical shear viscosity
-            f.etac .= exp.(rel*log.(etac_phys) .+ (1-rel)*log.(f.etac)) 
+            for j=1:ny, i=1:nx
+
+                 # physical viscosity
+                 etac_phys = Eii2[i,j]^mpow*exp( -f.T[i,j]*(1 / (1 + f.T[i,j]/T0)) ) 
+
+                 # numerical shear viscosity
+                 f.etac[i,j] = exp(rel*log(etac_phys) + (1-rel)*log(f.etac[i,j]))
+
+            end
 
             # expand viscosity fom cell centroids to vertices
             fill!(etav,0.0)
 
-  #@views    etav[2:end-1,2:end-1] .= 0.25*(f.etac[1:end-1,1:end-1] 
-  #                                       + f.etac[2:end,2:end] 
-  #                                       + f.etac[1:end-1,2:end] 
-  #                                       + f.etac[2:end,1:end-1])
-            for j = 1:ny, j = 1:nx
-                etav[i,j] = 0.25*(f.etac[i,j  ]+f.etac[i+1,j  ]
-                                 +f.etac[i,j+1]+f.etac[i+1,j+1])
+            for j = 2:ny, i = 2:nx
+                etav[i,j] = 0.25*(f.etac[i-1,j-1]+f.etac[i,j-1]
+                                 +f.etac[i-1,j  ]+f.etac[i,j  ])
             end
 
-  @views    etav[:      ,[1 end]] .= etav[:        ,[2 end-1]]
-  @views    etav[[1 end],:      ] .= etav[[2 end-1],:        ]
+            for i = 1:nx+1
+                etav[i,1   ] = etav[i, 2]
+                etav[i,ny+1] = etav[i,ny]
+            end
+            for j = 1:ny+1
+                etav[1,   j] = etav[2, j]
+                etav[nx+1,j] = etav[nx,j]
+            end
 
             # ------ Pseudo-Time steps ------
 
             dtauP   .= tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
 
-  @views    dtauVx  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ ( 
-                      0.5*(   f.etac[2:end,:] 
-                           .+ f.etac[1:end-1,:]) ))/(1+eta_b)
+            for j = 1:ny, i=1:nx-1
+                dtauVx[i,j]  = tetv * 1/4.1 * (min(dx,dy)^2 / ( 
+                          0.5*( f.etac[i+1,j] + f.etac[i,j] ) ))/(1+eta_b)
+            end
 
-  @views    dtauVy  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ (
-                       0.5*(  f.etac[:,2:end] 
-                           .+ f.etac[:,1:end-1]) ))/(1+eta_b)
+            for j = 1:ny-1, i=1:nx
+                dtauVy[i,j] = tetv * 1/4.1 * (min(dx,dy)^2 / (
+                           0.5*(  f.etac[i,j+1] + f.etac[i,j]) ))/(1+eta_b)
+            end
 
             dtauT    = tetT * 1/4.1 * min(dx,dy)^2
 
             # ------ Fluxes
 
-            f.qx[2:end-1,:] .= -diff(f.T,dims=1)/dx
-            f.qy[:,2:end-1] .= -diff(f.T,dims=2)/dy
+            for j=1:ny, i=2:nx
+                f.qx[i,j] = -(f.T[i,j]-f.T[i-1,j])/dx
+            end
 
-            Sxx .= -f.P .+ 2 * f.etac .* (Exxc .+ eta_b*divV)
-            Syy .= -f.P .+ 2 * f.etac .* (Eyyc .+ eta_b*divV)
+            for j=2:ny, i=1:nx
+                f.qy[i,j] = -(f.T[i,j]-f.T[i,j-1])/dy
+            end
 
-            Txy .= 2 * etav   .* Exyv
-            Hs  .= 4 * f.etac .* Eii2
+            for j=1:ny, i=1:nx
+                Sxx[i,j] = -f.P[i,j] + 2 * f.etac[i,j] * (Exxc[i,j] + eta_b*divV[i,j])
+                Syy[i,j] = -f.P[i,j] + 2 * f.etac[i,j] * (Eyyc[i,j] + eta_b*divV[i,j])
+            end
+
+            for j=1:ny+1, i=1:nx+1
+                Txy[i,j] = 2 * etav[i,j]  * Exyv[i,j]
+            end
+
+            for j=1:ny, i=1:nx
+                Hs[i,j] = 4 * f.etac[i,j] * Eii2[i,j]
+            end
 
             # ------ Residuals
 
-   @views   f.dVxdtauVx .= diff(Txy[2:end-1,:],dims=2)/dy .+ diff(Sxx,dims=1)/dx
-   @views   f.dVydtauVy .= diff(Txy[:,2:end-1],dims=1)/dx .+ diff(Syy,dims=2)/dy
+            for j=1:ny, i=1:nx-1
+                f.dVxdtauVx[i,j] = (Txy[i+1,j+1]-Txy[i+1,j])/dy + (Sxx[i+1,j]-Sxx[i,j])/dx
+            end
+
+            for j=1:ny-1, i=1:nx
+                f.dVydtauVy[i,j] = (Txy[i+1,j+1]-Txy[i,j+1])/dx + (Syy[i,j+1]-Syy[i,j])/dy
+            end
 
             dPdtauP    .= - divV
             dTdtauT    .= (To.-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
@@ -178,6 +211,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             end
 
         end
+        return
 
 
     end
@@ -191,3 +225,4 @@ mesh = Mesh( Lx, nx, Ly, ny)
 fields = Fields( mesh, Vbc, r, Tamp )
 
 @time solve_with_loops( mesh, fields )
+
