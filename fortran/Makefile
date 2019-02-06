@@ -1,9 +1,10 @@
 PROG = m2dpt
 
-SRCS = $(wildcard *.f90) 
+#SRCS = $(wildcard *.f90) 
+SRCS = m2dpt.f90 numerics.f90 physics.f90
 OBJS = $(SRCS:.f90=.o)    
     
-F90 = mpif90
+F90 = gfortran
 OPT = -O3
 F90FLAGS = $(OPT) 
 LDFLAGS = $(OPT) 
