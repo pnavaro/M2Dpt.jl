@@ -42,8 +42,6 @@ program m2dpt
     real(8), parameter   :: dampy = 1*(1-Vdamp/ny)   ! velocity damping for y-momentum equation
     real(8), parameter   :: mpow  = -(1d0-1d0/n)/2d0 ! exponent for strain rate dependent viscosity
 
-    real(8), allocatable :: Vx_exp  (:,:)
-    real(8), allocatable :: Vy_exp  (:,:)
     real(8), allocatable :: etav    (:,:) 
     real(8), allocatable :: Exyv    (:,:) 
     real(8), allocatable :: Exyc    (:,:)
@@ -83,8 +81,8 @@ program m2dpt
        yc(j) = (j-0.5)*dy
     end do
 
-    allocate(Vx(nx+1,ny))
-    allocate(Vy(nx,ny+1))
+    allocate(Vx(nx+1,0:ny+1))
+    allocate(Vy(0:nx+1,ny+1))
 
     do j = 1, ny+1
         do i = 1, nx+1
@@ -117,8 +115,6 @@ program m2dpt
 
     dtT = tetT*1/4.1*min(dx,dy)**2 ! explicit timestep for 2D diffusion
     
-    allocate(Vx_exp  (nx+1,ny+2)); Vx_exp  = 0d0
-    allocate(Vy_exp  (nx+2,ny+1)); Vy_exp  = 0d0
     allocate(etav    (nx+1,ny+1)); etav    = 0d0 
     allocate(Exyv    (nx+1,ny+1)); Exyv    = 0d0 
     allocate(Exyc    (nx,ny))    ; Exyc    = 0d0 
@@ -153,21 +149,6 @@ program m2dpt
 
             !  Kinematics
 
-            do i = 1,nx+1
-                Vx_exp(i,1)  = Vx(i,1)
-                do j = 1,ny
-                    Vx_exp(i,j+1) = Vx(i,j)
-                end do
-                Vx_exp(i,ny+2) = Vx(i,ny)
-            end do
-                
-            do j = 1,ny+1
-                Vy_exp(1,j) = Vy(1,j)
-                do i = 1,nx
-                    Vy_exp(i+1,j) = Vy(i,j)
-                end do
-                Vy_exp(nx+2,j) = Vy(nx,j)
-            end do
 
             do j=1,ny
             do i=1,nx
@@ -183,10 +164,15 @@ program m2dpt
             end do
             end do
 
+            Vx(:,0)    = Vx(:,1)
+            Vx(:,ny+1) = Vx(:,ny)
+            Vy(0,:)    = Vy(1,:)
+            Vy(nx+1,:) = Vy(nx,:)
+
             do j=1,ny+1
             do i=1,nx+1
-                Exyv(i,j) = 0.5d0*(  (Vx_exp(i,j+1)-Vx_exp(i,j))/dy  &
-                                   + (Vy_exp(i+1,j)-Vy_exp(i,j))/dx )
+                Exyv(i,j) = 0.5d0*(  (Vx(i,j)-Vx(i,j-1))/dy  &
+                                   + (Vy(i,j)-Vy(i-1,j))/dx )
             end do
             end do
 
@@ -315,8 +301,9 @@ program m2dpt
             ! ------ Updates
 
             ! update with damping
-            Vx(2:nx,:) = Vx(2:nx,:) + dtauVx * (dVxdtauVx + dampx*dVxdtauVx0) 
-            Vy(:,2:ny) = Vy(:,2:ny) + dtauVy * (dVydtauVy + dampy*dVydtauVy0)
+            Vx(2:nx,1:ny) = Vx(2:nx,1:ny) + dtauVx * (dVxdtauVx + dampx*dVxdtauVx0) 
+            Vy(1:nx,2:ny) = Vy(1:nx,2:ny) + dtauVy * (dVydtauVy + dampy*dVydtauVy0)
+
             P          = P + dtauP  * dPdtauP
             T          = T + dtauT  * dTdtauT
 
