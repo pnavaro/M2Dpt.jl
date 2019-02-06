@@ -21,5 +21,5 @@ https://doi.org/10.1093/gji/ggy434.
 - Fortran reference program
 
 ```
-real	3m55.963s
+227 seconds
 ```
