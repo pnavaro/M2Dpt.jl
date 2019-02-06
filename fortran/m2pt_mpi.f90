@@ -44,6 +44,8 @@ allocate(yc(ny))
 dx = Lx / real(nx,kind=8)
 dy = Ly / real(ny,kind=8)
 
+print*, dx, dy
+
 do i = 1, nx+1
    xn(i) = (i-1)*dx
 end do
@@ -90,6 +92,8 @@ offset_y = coords(2)*my
 allocate(Vx(mx+1,my))
 allocate(Vy(mx,my+1))
 allocate(div(mx,my))
+allocate(Exxc(mx,my))
+allocate(Eyyc(mx,my))
 
 print*, "proc : ",prank,": ",mx,"x",my
 print*, "proc : ",prank,": coordinates : ", coords(:)
@@ -116,6 +120,8 @@ do j = 1, my+1
 end do
 
 !Send to neighbor EAST and receive from neighbor WEST
+call MPI_SEND( vx(   1,my+1), 1, column_t, neighbor(EAST), tag, comm2d, code)
+call MPI_RECV( vx(   1,   1), 1, column_t, neighbor(WEST), tag, comm2d, stat, code)
 if (neighbor(EAST) >= 0) then
     call MPI_SENDRECV(vx(   1,my+1),1,column_t,neighbor(EAST),tag,&
                       vx(   1,   1),1,column_t,neighbor(WEST),tag,&
@@ -150,14 +156,34 @@ do j=1,my
       dVydy = (Vy(i,j+1)-Vy(i,j))/dy
 
       div(i,j) = dVxdx + dVydy
+      Exxc(i,j) = dVxdx - 0.5d0 * (dVxdx + dVydy)
+      Eyyc(i,j) = dVydy - 0.5d0 * (dVxdx + dVydy)
 
    end do
 end do
 
+            end do
+            end do
+
+            do j=1,ny+1
+            do i=1,nx+1
+                Exyv(i,j) = 0.5d0*(  (Vx_exp(i,j+1)-Vx_exp(i,j))/dy  &
+                                   + (Vy_exp(i+1,j)-Vy_exp(i,j))/dx )
+            end do
+            end do
+
+            do j=1,ny
+            do i=1,nx
+                Exyc(i,j) = 0.25d0*(Exyv(i,j  )+Exyv(i+1,j  ) &
+                                   +Exyv(i,j+1)+Exyv(i+1,j+1))
+            end do
+            end do
+
+
 
 call flush(6)
 call MPI_BARRIER(MPI_COMM_WORLD, code)
-call plot(1)
+call plot(1, div)
 call MPI_BARRIER(MPI_COMM_WORLD, code)
 tcpu2 = MPI_WTIME()
 if (prank == 0) &
@@ -191,9 +217,10 @@ subroutine int2string( ival, fin)
 
 end subroutine int2string
 
-subroutine plot(iplot)
+subroutine plot(iplot, f)
 
 integer :: iplot
+real(8) :: f(:,:)
 character(len=4) :: fin
 
 call int2string( prank*1000+iplot, fin)
@@ -201,7 +228,7 @@ call int2string( prank*1000+iplot, fin)
 open( 80, file = fin//".dat" )
    do i=1,mx
       do j=1,my
-         write(80,"(3e10.2)") xc(offset_x+i), yc(offset_y+j),Vx(i,j)
+         write(80,"(3e10.2)") xc(offset_x+i), yc(offset_y+j), f(i,j)
       end do
       write(80,*) 
    end do
