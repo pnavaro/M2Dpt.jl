@@ -6,6 +6,11 @@ Julia version of the matlab script `TM2Dpt_GJI.m`
 
 https://doi.org/10.1093/gji/ggy434.
 
+- MATLAB 2018a (probably uses more than one thread)
+```
+219 seconds
+```
+
 - Julia vectorized code (`test` directory)
 
 ```
