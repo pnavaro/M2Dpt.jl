@@ -11,6 +11,16 @@ const dampx = 1*(1-Vdamp/nx) # velocity damping for x-momentum equation
 const dampy = 1*(1-Vdamp/ny) # velocity damping for y-momentum equation
 const mpow  = -(1-1/n)/2     # exponent for strain rate dependent viscosity
 
+"""
+```math
+\\frac{∂ υᵢ }{∂xᵢ} = 0, \\
+\\frac{τᵢⱼ }{xⱼ} - \\frac{∂ υᵢ }{∂xᵢ}  = 0, \\
+τᵢⱼ ϵ̇ᵢⱼ + \\frac{τᵢⱼ }{xⱼ} - \\frac{∂ υᵢ }{∂xᵢ}  = 0, \\
+ϵ̇ᵢⱼ  = \\frac{1}{2} \\big( \\frac{∂ υ_i }{∂x_j} + \\frac{∂ υ_j }{∂x_i} \\big)) 
+= 2^{-n} τ\^{n-1}_{II} \\exp \\big( \\frac{n T}{1 + T/T_0} \\big) τ_{ij}
+```
+"""
+
 function solve_with_loops( m :: Mesh, f :: Fields )
 
     time   = 0.0     :: Float64
@@ -107,7 +117,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             for j=1:ny, i=1:nx
 
                  # physical viscosity
-                 etac_phys = Eii2[i,j]^mpow*exp( -f.T[i,j]*(1 / (1 + f.T[i,j]/T0)) ) 
+                 etac_phys = Eii2[i,j]^mpow*exp( -f.T[i,j]*(1 / (1 + f.T[i,j]/T0)) ) :: Float64 
 
                  # numerical shear viscosity
                  f.etac[i,j] = exp(rel*log(etac_phys) + (1-rel)*log(f.etac[i,j]))
@@ -204,8 +214,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 end
             end
 
-            f.P             .+= dtauP  .* dPdtauP
-            f.T             .+= dtauT  .* dTdtauT
+            f.P .+= dtauP .* dPdtauP
+            f.T .+= dtauT .* dTdtauT
 
             if (iter % nout ==0) # Check
 
