@@ -11,6 +11,7 @@ const dampx = 1*(1-Vdamp/nx) # velocity damping for x-momentum equation
 const dampy = 1*(1-Vdamp/ny) # velocity damping for y-momentum equation
 const mpow  = -(1-1/n)/2     # exponent for strain rate dependent viscosity
 
+#==
 """
 ```math
 \\frac{∂ υᵢ }{∂xᵢ} = 0, \\
@@ -20,6 +21,7 @@ const mpow  = -(1-1/n)/2     # exponent for strain rate dependent viscosity
 = 2^{-n} τ\^{n-1}_{II} \\exp \\big( \\frac{n T}{1 + T/T_0} \\big) τ_{ij}
 ```
 """
+==#
 
 function solve_with_loops( m :: Mesh, f :: Fields )
 
@@ -51,8 +53,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
     dtauP   = similar(f.etac)           
     dtauVx  = zeros(Float64,(nx-1,ny))  
     dtauVy  = zeros(Float64,(nx,ny-1))  
-
-    @show sum(f.T)
 
     for it = 1:nt # Physical timesteps
 
@@ -108,19 +108,18 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                                  +Exyv[i,j+1]+Exyv[i+1,j+1])
             end
 
-            for j=1:ny, i=1:nx
-                Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc[i,j]^2 # strain rate invariant
+            for i in eachindex(Eii2)
+                Eii2[i] = 0.5*(Exxc[i]^2 + Eyyc[i]^2) + Exyc[i]^2 # strain rate invariant
             end 
 
 
             # ------ Rheology
-            for j=1:ny, i=1:nx
+            for i in eachindex(Eii2)
 
                  # physical viscosity
-                 etac_phys = Eii2[i,j]^mpow*exp( -f.T[i,j]*(1 / (1 + f.T[i,j]/T0)) ) :: Float64 
-
+                 etac_phys = Eii2[i]^mpow*exp( -f.T[i]*(1 / (1 + f.T[i]/T0)) ) :: Float64 
                  # numerical shear viscosity
-                 f.etac[i,j] = exp(rel*log(etac_phys) + (1-rel)*log(f.etac[i,j]))
+                 f.etac[i] = exp(rel*log(etac_phys) + (1-rel)*log(f.etac[i]))
 
             end
 
@@ -169,20 +168,20 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 f.qy[i,j] = -(f.T[i,j]-f.T[i,j-1])/dy
             end
 
-            for j=1:ny, i=1:nx
-                Sxx[i,j] = -f.P[i,j] + 2 * f.etac[i,j] * (Exxc[i,j] + eta_b*divV[i,j])
-                Syy[i,j] = -f.P[i,j] + 2 * f.etac[i,j] * (Eyyc[i,j] + eta_b*divV[i,j])
+            for i in eachindex(Sxx)
+                Sxx[i] = -f.P[i] + 2 * f.etac[i] * (Exxc[i] + eta_b*divV[i])
+                Syy[i] = -f.P[i] + 2 * f.etac[i] * (Eyyc[i] + eta_b*divV[i])
             end
 
             for j=1:ny+1, i=1:nx+1
                 Txy[i,j] = 2 * etav[i,j]  * Exyv[i,j]
             end
 
-            for j=1:ny, i=1:nx
-                Hs[i,j] = 4 * f.etac[i,j] * Eii2[i,j]
+            for i in eachindex(Hs)
+                Hs[i] = 4 * f.etac[i] * Eii2[i]
             end
 
-            # ------ Residuals
+            # ------ Residuals ----------
 
             for j=1:ny, i=1:nx-1
                 f.dVxdtauVx[i,j] = (Txy[i+1,j+1]-Txy[i+1,j])/dy + (Sxx[i+1,j]-Sxx[i,j])/dx
@@ -192,14 +191,14 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 f.dVydtauVy[i,j] = (Txy[i+1,j+1]-Txy[i,j+1])/dx + (Syy[i,j+1]-Syy[i,j])/dy
             end
 
-             
             for j=1:ny, i=1:nx
                 dPdtauP[i,j] = - divV[i,j]
                 dTdtauT[i,j] = ((To[i,j]-f.T[i,j])/dtT 
-                               - ((f.qx[i+1,j]-f.qx[i,j])/dx + (f.qy[i,j+1]-f.qy[i,j])/dy) 
+                               - ((f.qx[i+1,j]-f.qx[i,j])/dx 
+                                + (f.qy[i,j+1]-f.qy[i,j])/dy) 
                                + Hs[i,j])
             end
-            # ------ Updates
+            # ------ Updates ------------
 
             # update with damping
             for j = 1:ny
@@ -219,8 +218,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             if (iter % nout ==0) # Check
 
-                fu     = hcat(f.dVxdtauVx, transpose(f.dVydtauVy))
-                err_fu = norm(fu)/length(fu) 
+                err_fu = sqrt(sum(f.dVxdtauVx.^2)
+                             +sum(f.dVydtauVy.^2))/(nx*(ny-1)+ny*(nx-1))
                 err_fp = norm(dPdtauP)/length(dPdtauP)
                 err_fT = norm(dTdtauT)/length(dTdtauT)
                 err    = [err_fu, err_fp, err_fT]
