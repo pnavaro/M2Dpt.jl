@@ -1,5 +1,6 @@
 program m2dpt
 
+    use omp_lib
     use physics
     use numerics
 
@@ -37,14 +38,16 @@ program m2dpt
     real(8), allocatable :: dVydtauVy(:,:)
     real(8), allocatable :: dVxdtauVx0(:,:)
     real(8), allocatable :: dVydtauVy0(:,:)
-
-    real(8), parameter   :: dampx = 1*(1-Vdamp/nx)   ! velocity damping for x-momentum equation
-    real(8), parameter   :: dampy = 1*(1-Vdamp/ny)   ! velocity damping for y-momentum equation
-    real(8), parameter   :: mpow  = -(1d0-1d0/n)/2d0 ! exponent for strain rate dependent viscosity
+    ! velocity damping for x-momentum equation
+    real(8), parameter   :: dampx = 1*(1-Vdamp/nx)   
+    ! velocity damping for y-momentum equation
+    real(8), parameter   :: dampy = 1*(1-Vdamp/ny)   
+    ! exponent for strain rate dependent viscosity
+    real(8), parameter   :: mpow  = -(1d0-1d0/n)/2d0 
+    real(8)              :: Exyc
 
     real(8), allocatable :: etav    (:,:) 
     real(8), allocatable :: Exyv    (:,:) 
-    real(8), allocatable :: Exyc    (:,:)
     real(8), allocatable :: divV    (:,:)
     real(8), allocatable :: Exxc    (:,:)
     real(8), allocatable :: Eyyc    (:,:)
@@ -117,7 +120,6 @@ program m2dpt
     
     allocate(etav    (nx+1,ny+1)); etav    = 0d0 
     allocate(Exyv    (nx+1,ny+1)); Exyv    = 0d0 
-    allocate(Exyc    (nx,ny))    ; Exyc    = 0d0 
     allocate(divV    (nx,ny))    ; divV    = 0d0
     allocate(Exxc    (nx,ny))    ; Exxc    = 0d0
     allocate(Eyyc    (nx,ny))    ; Eyyc    = 0d0
@@ -133,9 +135,20 @@ program m2dpt
     allocate(dtauVx  (nx-1,ny))  ; dtauVx  = 0d0
     allocate(dtauVy  (nx,ny-1))  ; dtauVy  = 0d0
 
+    !$OMP PARALLEL DEFAULT(PRIVATE) &
+    !$OMP FIRSTPRIVATE(dx, dy, time) &
+    !$OMP PRIVATE(xn, xc, yn, yc, i, j, dVxdx, dVydy, etac_phys, To, &
+    !$OMP         dtauT, iter) 
+
+    !$OMP CRITICAL
+    print*, OMP_GET_NUM_THREADS(),OMP_GET_THREAD_NUM()
+    !$OMP END CRITICAL
+    !$OMP END PARALLEL
+
     do it = 1,nt ! Physical timesteps
 
-        To = T ! temperature from previous step (for backward-Euler integration)
+        To = T ! temperature from previous step 
+        !(for backward-Euler integration)
 
         time = time + dtT ! update physical time
 
@@ -148,8 +161,6 @@ program m2dpt
             dVydtauVy0 = dVydtauVy + dampy * dVydtauVy0 
 
             !  Kinematics
-
-
             do j=1,ny
             do i=1,nx
 
@@ -176,16 +187,13 @@ program m2dpt
             end do
             end do
 
+            ! strain rate invariant
             do j=1,ny
             do i=1,nx
-                Exyc(i,j) = 0.25d0*(Exyv(i,j  )+Exyv(i+1,j  ) &
-                                   +Exyv(i,j+1)+Exyv(i+1,j+1))
-            end do
-            end do
-
-            do j=1,ny
-            do i=1,nx
-                Eii2(i,j) = 0.5d0*(Exxc(i,j)**2 + Eyyc(i,j)**2) + Exyc(i,j)**2 ! strain rate invariant
+                Exyc = 0.25d0*(Exyv(i,j  )+Exyv(i+1,j  ) &
+                              +Exyv(i,j+1)+Exyv(i+1,j+1))
+                Eii2(i,j) = 0.5d0*(Exxc(i,j)**2 &
+                                 + Eyyc(i,j)**2) + Exyc**2 
             end do 
             end do 
 
@@ -194,11 +202,11 @@ program m2dpt
             do j=1,ny
             do i=1,nx
 
-                 ! physical viscosity
-                 etac_phys = Eii2(i,j)**mpow*exp( -T(i,j)*(1 / (1 + T(i,j)/T0)) ) 
+                ! physical viscosity
+                etac_phys = Eii2(i,j)**mpow*exp(-T(i,j)*(1/(1+T(i,j)/T0))) 
 
-                 ! numerical shear viscosity
-                 etac(i,j) = exp(rel*log(etac_phys) + (1-rel)*log(etac(i,j)))
+                ! numerical shear viscosity
+                etac(i,j) = exp(rel*log(etac_phys)+(1-rel)*log(etac(i,j)))
 
             end do
             end do
@@ -258,8 +266,10 @@ program m2dpt
 
             do j=1,ny
             do i=1,nx
-                Sxx(i,j) = -P(i,j) + 2 * etac(i,j) * (Exxc(i,j) + eta_b*divV(i,j))
-                Syy(i,j) = -P(i,j) + 2 * etac(i,j) * (Eyyc(i,j) + eta_b*divV(i,j))
+                Sxx(i,j) = -P(i,j) &
+                         + 2 * etac(i,j) * (Exxc(i,j) + eta_b*divV(i,j))
+                Syy(i,j) = -P(i,j) &
+                         + 2 * etac(i,j) * (Eyyc(i,j) + eta_b*divV(i,j))
             end do
             end do
 
@@ -279,37 +289,52 @@ program m2dpt
 
             do j=1,ny
             do i=1,nx-1
-                dVxdtauVx(i,j) = (Txy(i+1,j+1)-Txy(i+1,j))/dy + (Sxx(i+1,j)-Sxx(i,j))/dx
+                dVxdtauVx(i,j) = (Txy(i+1,j+1)-Txy(i+1,j))/dy &
+                                 + (Sxx(i+1,j)-Sxx(i,j))/dx
             end do
             end do
 
             do j=1,ny-1
             do i=1,nx
-                dVydtauVy(i,j) = (Txy(i+1,j+1)-Txy(i,j+1))/dx + (Syy(i,j+1)-Syy(i,j))/dy
+                dVydtauVy(i,j) = (Txy(i+1,j+1)-Txy(i,j+1))/dx &
+                                 + (Syy(i,j+1)-Syy(i,j))/dy
             end do
             end do
 
-             
             do j=1,ny
             do i=1,nx
                 dPdtauP(i,j) = - divV(i,j)
-                dTdtauT(i,j) = ((To(i,j)-T(i,j))/dtT  &
-                               - ((qx(i+1,j)-qx(i,j))/dx + (qy(i,j+1)-qy(i,j))/dy)  &
+                dTdtauT(i,j) = ((To(i,j)-T(i,j))/dtT      &
+                               - ((qx(i+1,j)-qx(i,j))/dx  &
+                               + (qy(i,j+1)-qy(i,j))/dy)  &
                                + Hs(i,j))
             end do
             end do
+
             ! ------ Updates
 
             ! update with damping
-            Vx(2:nx,1:ny) = Vx(2:nx,1:ny) + dtauVx * (dVxdtauVx + dampx*dVxdtauVx0) 
-            Vy(1:nx,2:ny) = Vy(1:nx,2:ny) + dtauVy * (dVydtauVy + dampy*dVydtauVy0)
+            do j = 1, ny
+            do i = 1, nx-1
+                Vx(i+1,j) = Vx(i+1,j) &
+                    + dtauVx(i,j) * (dVxdtauVx(i,j) + dampx*dVxdtauVx0(i,j)) 
+            end do
+            end do
 
-            P          = P + dtauP  * dPdtauP
-            T          = T + dtauT  * dTdtauT
+            do j = 1, ny-1
+            do i = 1, nx
+                Vy(i,j+1) = Vy(i,j+1) &
+                    + dtauVy(i,j) * (dVydtauVy(i,j) + dampy*dVydtauVy0(i,j))
+            end do
+            end do
+
+            P = P + dtauP  * dPdtauP
+            T = T + dtauT  * dTdtauT
 
             if (mod(iter,nout) ==0) then! Check
 
-                err_fu = sqrt(sum(dVxdtauVx**2)+sum(dVydtauVy**2))/(nx*(ny-1)+ny*(ny-1))
+                err_fu = sqrt(sum(dVxdtauVx**2) &
+                             +sum(dVydtauVy**2))/(nx*(ny-1)+ny*(ny-1))
                 err_fp = sqrt(sum(dPdtauP**2))/(nx*ny)
                 err_fT = sqrt(sum(dTdtauT**2))/(nx*ny)
 
@@ -328,5 +353,6 @@ program m2dpt
         end do
 
     end do
+
 
 end program m2dpt

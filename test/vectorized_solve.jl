@@ -7,8 +7,6 @@ function vectorized_solve( m :: Mesh, f :: Fields )
     
     errs  = []
 
-    Vx_exp  = zeros(Float64,(nx+1,ny+2))
-    Vy_exp  = zeros(Float64,(nx+2,ny+1))
     etav    = zeros(Float64,(nx+1,ny+1)) 
     Exyv    = zeros(Float64,(nx+1,ny+1)) 
     Exyc    = zeros(Float64,(nx,ny)) 
@@ -29,13 +27,12 @@ function vectorized_solve( m :: Mesh, f :: Fields )
 
     for it = 1:nt # Physical timesteps
 
-        To .= f.T # temperature from previous step (for backward-Euler integration)
+        # temperature from previous step (for backward-Euler integration)
+        To .= f.T 
 
         @show time += dtT # update physical time
 
         for iter = 1:niter # Pseudo-Transient cycles
-
-    #        err   = [Vx(:); Vy(:); P(:); T(:); etac(:)];
 
             # used for damping x momentum residuals
             f.dVxdtauVx0 .= f.dVxdtauVx .+ dampx .* f.dVxdtauVx0  
@@ -44,28 +41,33 @@ function vectorized_solve( m :: Mesh, f :: Fields )
             f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0 
 
             #  Kinematics
-  @views    Vx_exp .= hcat(f.Vx[:,1], f.Vx, f.Vx[:,end])  
-  @views    Vy_exp .= vcat(f.Vy[1,:]', f.Vy, f.Vy[end,:]')
+            f.Vx[  :,  1] .= f.Vx[    :,    2]
+            f.Vx[  :,end] .= f.Vx[    :,end-1]
+            f.Vy[  1,  :] .= f.Vy[    2,    :]
+            f.Vy[end,  :] .= f.Vy[end-1,    :]
 
-            divV .= diff(f.Vx,dims=1)/dx .+ diff(f.Vy,dims=2)/dy
-            Exxc .= diff(f.Vx,dims=1)/dx .- 1/2*divV
-            Eyyc .= diff(f.Vy,dims=2)/dy .- 1/2*divV
+            divV .= (diff(f.Vx[:,2:end-1],dims=1) ./ dx 
+                  .+ diff(f.Vy[2:end-1,:],dims=2) ./ dy)
 
-            Exyv .= 0.5*(diff(Vx_exp,dims=2)/dy .+ diff(Vy_exp,dims=1)/dx)
+            Exxc .= diff(f.Vx[:,2:end-1],dims=1) ./ dx .- 1/2 .* divV
+            Eyyc .= diff(f.Vy[2:end-1,:],dims=2) ./ dy .- 1/2 .* divV
 
-  @views    Exyc .= 0.25*(Exyv[1:end-1,1:end-1] .+ 
-                          Exyv[2:end  ,1:end-1] .+ 
-                          Exyv[1:end-1,2:end  ] .+ 
-                          Exyv[2:end  ,2:end  ])
+            Exyv .= 0.5 .* (diff(f.Vx,dims=2)./dy .+ diff(f.Vy,dims=1)./dx)
 
-            Eii2 .= 0.5*(Exxc.^2 .+ Eyyc.^2) .+ Exyc.^2 # strain rate invariant
+  @views    Exyc .= 0.25 .* ( Exyv[1:end-1,1:end-1] .+ 
+                              Exyv[2:end  ,1:end-1] .+ 
+                              Exyv[1:end-1,2:end  ] .+ 
+                              Exyv[2:end  ,2:end  ])
+
+            # strain rate invariant
+            Eii2 .= 0.5 .* (Exxc.^2 .+ Eyyc.^2) .+ Exyc.^2 
 
             # ------ Rheology
             # physical viscosity
-            etac_phys = Eii2.^mpow.*exp.( -f.T.*(1 ./ (1 .+ f.T./T0)) ) 
+            etac_phys = Eii2.^mpow .* exp.( -f.T.*(1 ./ (1 .+ f.T./T0)) ) 
 
             # numerical shear viscosity
-            f.etac .= exp.(rel*log.(etac_phys) .+ (1-rel)*log.(f.etac)) 
+            f.etac .= exp.(rel .* log.(etac_phys) .+ (1-rel) .* log.(f.etac)) 
 
             # expand viscosity fom cell centroids to vertices
             fill!(etav,0.0)
@@ -83,46 +85,50 @@ function vectorized_solve( m :: Mesh, f :: Fields )
             dtauP   .= tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
 
   @views    dtauVx  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ ( 
-                      0.5*(   f.etac[2:end,:] 
-                           .+ f.etac[1:end-1,:]) ))/(1+eta_b)
+                      0.5.*(   f.etac[2:end,:] 
+                           .+  f.etac[1:end-1,:]) ))./(1+eta_b)
 
   @views    dtauVy  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ (
-                       0.5*(  f.etac[:,2:end] 
-                           .+ f.etac[:,1:end-1]) ))/(1+eta_b)
+                       0.5.*(  f.etac[:,2:end] 
+                           .+  f.etac[:,1:end-1]) ))./(1+eta_b)
 
             dtauT    = tetT * 1/4.1 * min(dx,dy)^2
 
             # ------ Fluxes
 
-            f.qx[2:end-1,:] .= -diff(f.T,dims=1)/dx
-            f.qy[:,2:end-1] .= -diff(f.T,dims=2)/dy
+            f.qx[2:end-1,:] .= .- diff(f.T,dims=1) ./ dx
+            f.qy[:,2:end-1] .= .- diff(f.T,dims=2) ./ dy
 
-            Sxx .= -f.P .+ 2 * f.etac .* (Exxc .+ eta_b*divV)
-            Syy .= -f.P .+ 2 * f.etac .* (Eyyc .+ eta_b*divV)
+            Sxx .= .-f.P .+ 2 .* f.etac .* (Exxc .+ eta_b .* divV)
+            Syy .= .-f.P .+ 2 .* f.etac .* (Eyyc .+ eta_b .* divV)
 
-            Txy .= 2 * etav   .* Exyv
-            Hs  .= 4 * f.etac .* Eii2
+            Txy .= 2 .* etav   .* Exyv
+            Hs  .= 4 .* f.etac .* Eii2
 
             # ------ Residuals
 
-   @views   f.dVxdtauVx .= diff(Txy[2:end-1,:],dims=2)/dy .+ diff(Sxx,dims=1)/dx
-   @views   f.dVydtauVy .= diff(Txy[:,2:end-1],dims=1)/dx .+ diff(Syy,dims=2)/dy
+   @views   f.dVxdtauVx .= (  diff(Txy[2:end-1,:],dims=2)./dy 
+                           .+ diff(Sxx,dims=1)./dx)
+   @views   f.dVydtauVy .= (  diff(Txy[:,2:end-1],dims=1)./dx 
+                           .+ diff(Syy,dims=2)./dy)
 
             dPdtauP    .= - divV
-            dTdtauT    .= (To.-f.T)/dtT .- (diff(f.qx,dims=1)/dx 
-                                        .+  diff(f.qy,dims=2)/dy) .+ Hs
+            dTdtauT    .= (To.-f.T)./dtT .- (diff(f.qx,dims=1)./dx 
+                                         .+  diff(f.qy,dims=2)./dy) .+ Hs
             # ------ Updates
 
             # update with damping
-            f.Vx[2:end-1,:] .+= dtauVx .* (f.dVxdtauVx .+ dampx.*f.dVxdtauVx0) 
-            f.Vy[:,2:end-1] .+= dtauVy .* (f.dVydtauVy .+ dampy.*f.dVydtauVy0)
-            f.P             .+= dtauP  .* dPdtauP
-            f.T             .+= dtauT  .* dTdtauT
+            f.Vx[2:end-1,2:end-1] .+= dtauVx .* (f.dVxdtauVx 
+                                      .+ dampx.*f.dVxdtauVx0) 
+            f.Vy[2:end-1,2:end-1] .+= dtauVy .* (f.dVydtauVy 
+                                      .+ dampy.*f.dVydtauVy0)
+            f.P .+= dtauP .* dPdtauP
+            f.T .+= dtauT .* dTdtauT
 
             if (iter % nout ==0) # Check
 
-                fu     = hcat(f.dVxdtauVx, transpose(f.dVydtauVy))
-                err_fu = norm(fu)/length(fu) 
+                err_fu = sqrt(sum(f.dVxdtauVx.^2) + 
+                              sum(f.dVydtauVy.^2)) / (nx*(ny-1)+ny*(nx-1))
                 err_fp = norm(dPdtauP)/length(dPdtauP)
                 err_fT = norm(dTdtauT)/length(dTdtauT)
                 err    = [err_fu, err_fp, err_fT]

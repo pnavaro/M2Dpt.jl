@@ -32,13 +32,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
     local  dtT :: Float64
     dtT = tetT*1.0/4.1*min(dx,dy)^2 # explicit timestep for 2D diffusion
     
-    errs  = []
-
-    Vx_exp  = zeros(Float64,(nx+1,ny+2))
-    Vy_exp  = zeros(Float64,(nx+2,ny+1))
     etav    = zeros(Float64,(nx+1,ny+1))
     Exyv    = zeros(Float64,(nx+1,ny+1))
-    Exyc    = zeros(Float64,(nx,ny))    
     divV    = zeros(Float64,(nx,ny))    
     Exxc    = zeros(Float64,(nx,ny))    
     Eyyc    = zeros(Float64,(nx,ny))    
@@ -57,7 +52,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
     for it = 1:nt # Physical timesteps
 
         To .= f.T # temperature from previous step (for backward-Euler integration)
-
         @show time += dtT # update physical time
 
         for iter = 1:niter # Pseudo-Transient cycles
@@ -71,45 +65,39 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             #  Kinematics
 
             for i = 1:nx+1
-                Vx_exp[i,1]  = f.Vx[i,1]
-                for j = 1:ny
-                    Vx_exp[i,j+1] = f.Vx[i,j]
-                end
-                Vx_exp[i,ny+2] = f.Vx[i,ny]
+                f.Vx[i,   1] = f.Vx[i,2]
+                f.Vx[i,ny+2] = f.Vx[i,ny+1]
             end
                 
             for j = 1:ny+1
-                Vy_exp[1,j] = f.Vy[1,j]
-                for i = 1:nx
-                    Vy_exp[i+1,j] = f.Vy[i,j]
-                end
-                Vy_exp[nx+2,j] = f.Vy[nx,j]
+                f.Vy[1,   j] = f.Vy[2,j]
+                f.Vy[nx+2,j] = f.Vy[nx+1,j]
             end
 
             for j = 1:ny, i=1:nx
 
-                dVxdx = (f.Vx[i+1,j]-f.Vx[i,j])/dx :: Float64
-                dVydy = (f.Vy[i,j+1]-f.Vy[i,j])/dy :: Float64
+                dVxdx = (f.Vx[i+1,j+1]-f.Vx[i,j+1])/dx :: Float64
+                dVydy = (f.Vy[i+1,j+1]-f.Vy[i+1,j])/dy :: Float64
 
                 divV[i,j] = dVxdx + dVydy
 
                 Exxc[i,j] = dVxdx - 0.5 * (dVxdx + dVydy)
 
                 Eyyc[i,j] = dVydy - 0.5 * (dVxdx + dVydy)
+
             end
 
             for j=1:ny+1, i=1:nx+1
-                Exyv[i,j] = 0.5*(  (Vx_exp[i,j+1]-Vx_exp[i,j])/dy 
-                                 + (Vy_exp[i+1,j]-Vy_exp[i,j])/dx )
+                Exyv[i,j] = 0.5*(  (f.Vx[i,j+1]-f.Vx[i,j])/dy 
+                                 + (f.Vy[i+1,j]-f.Vy[i,j])/dx )
             end
 
             for j=1:ny, i=1:nx
-                Exyc[i,j] = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
-                                 +Exyv[i,j+1]+Exyv[i+1,j+1])
-            end
+                Exyc = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
+                            +Exyv[i,j+1]+Exyv[i+1,j+1]) :: Float64
 
-            for i in eachindex(Eii2)
-                Eii2[i] = 0.5*(Exxc[i]^2 + Eyyc[i]^2) + Exyc[i]^2 # strain rate invariant
+                # strain rate invariant
+                Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc^2 
             end 
 
 
@@ -117,9 +105,9 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             for i in eachindex(Eii2)
 
                  # physical viscosity
-                 etac_phys = Eii2[i]^mpow*exp( -f.T[i]*(1 / (1 + f.T[i]/T0)) ) :: Float64 
+                 etac_phys = Eii2[i]^mpow*exp(-f.T[i]*(1/(1+f.T[i]/T0))) :: Float64 
                  # numerical shear viscosity
-                 f.etac[i] = exp(rel*log(etac_phys) + (1-rel)*log(f.etac[i]))
+                 f.etac[i] = exp(rel*log(etac_phys)+(1-rel)*log(f.etac[i]))
 
             end
 
@@ -156,7 +144,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                            0.5*(  f.etac[i,j+1] + f.etac[i,j]) ))/(1+eta_b)
             end
 
-            dtauT    = tetT * 1/4.1 * min(dx,dy)^2
+            dtauT = tetT * 1/4.1 * min(dx,dy)^2
 
             # ------ Fluxes
 
@@ -173,8 +161,8 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 Syy[i] = -f.P[i] + 2 * f.etac[i] * (Eyyc[i] + eta_b*divV[i])
             end
 
-            for j=1:ny+1, i=1:nx+1
-                Txy[i,j] = 2 * etav[i,j]  * Exyv[i,j]
+            for i in eachindex(Txy)
+                Txy[i] = 2 * etav[i]  * Exyv[i]
             end
 
             for i in eachindex(Hs)
@@ -184,11 +172,13 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # ------ Residuals ----------
 
             for j=1:ny, i=1:nx-1
-                f.dVxdtauVx[i,j] = (Txy[i+1,j+1]-Txy[i+1,j])/dy + (Sxx[i+1,j]-Sxx[i,j])/dx
+                f.dVxdtauVx[i,j] = ((Txy[i+1,j+1]-Txy[i+1,j])/dy 
+                                 + (Sxx[i+1,j]-Sxx[i,j])/dx)
             end
 
             for j=1:ny-1, i=1:nx
-                f.dVydtauVy[i,j] = (Txy[i+1,j+1]-Txy[i,j+1])/dx + (Syy[i,j+1]-Syy[i,j])/dy
+                f.dVydtauVy[i,j] = ((Txy[i+1,j+1]-Txy[i,j+1])/dx 
+                                 + (Syy[i,j+1]-Syy[i,j])/dy)
             end
 
             for j=1:ny, i=1:nx
@@ -203,13 +193,15 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # update with damping
             for j = 1:ny
                 for i = 1:nx-1
-                    f.Vx[i+1,j] += dtauVx[i,j] * (f.dVxdtauVx[i,j] + dampx*f.dVxdtauVx0[i,j]) 
+                    f.Vx[i+1,j+1] += dtauVx[i,j] * (f.dVxdtauVx[i,j] 
+                                         + dampx*f.dVxdtauVx0[i,j]) 
                 end
             end
            
             for j = 1:ny-1
                 for i = 1:nx
-                    f.Vy[i,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] + dampy*f.dVydtauVy0[i,j])
+                    f.Vy[i+1,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] 
+                                         + dampy*f.dVydtauVy0[i,j])
                 end
             end
 
@@ -223,7 +215,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 err_fp = norm(dPdtauP)/length(dPdtauP)
                 err_fT = norm(dTdtauT)/length(dTdtauT)
                 err    = [err_fu, err_fp, err_fT]
-                push!(errs, [time,err_fu])
                 if max(err...) < epsi
                     break
                 end
@@ -240,8 +231,6 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
 
     end
-
-    errs
 
 end
 

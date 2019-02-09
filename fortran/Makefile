@@ -5,7 +5,7 @@ SRCS = m2dpt.f90 numerics.f90 physics.f90
 OBJS = $(SRCS:.f90=.o)    
     
 F90 = gfortran
-OPT = -O3
+OPT = -O3 -cpp -fopenmp
 F90FLAGS = $(OPT) 
 LDFLAGS = $(OPT) 
 

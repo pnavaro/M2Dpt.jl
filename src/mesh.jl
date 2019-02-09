@@ -13,11 +13,8 @@ struct Mesh
 
     function Mesh( Lx :: Float64, nx :: Int64, Ly :: Float64, ny :: Int64 )
 
-        
-        @show nx, Lx
-        @show ny, Ly
-        @show dx = Lx/nx              # grid step in x
-        @show dy = Ly/ny              # grid step in y
+        dx = Lx/nx
+        dy = Ly/ny
         xn = collect(0:dx:Lx)
         xc = collect(dx/2:dx:Lx-dx/2)
         yn = collect(0:dy:Ly)
