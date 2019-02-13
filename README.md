@@ -6,6 +6,8 @@ Julia version of the matlab script `TM2Dpt_GJI.m`
 
 https://doi.org/10.1093/gji/ggy434.
 
+Timing are made on one computer (Mac Pro 2013)
+
 - MATLAB 2018a (probably uses more than one thread)
 ```
 219 seconds
@@ -21,6 +23,12 @@ https://doi.org/10.1093/gji/ggy434.
 
 ```
 297.820268 seconds (2.81 M allocations: 407.538 MiB, 0.05% gc time)
+```
+
+- Python + Numpy
+
+```
+380 seconds
 ```
 
 - Fortran reference program
