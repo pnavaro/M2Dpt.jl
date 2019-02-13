@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import time as tm
 plt.close("all")
 def ndgrid(x_v,y_v):
-    x2,y2   = np.meshgrid(x_v,y_v); x2=np.transpose(x2); y2=np.transpose(y2);
+    x2, y2 = np.meshgrid(x_v,y_v, indexing="ij")
     return (x2,y2)
+
 ###############################################################################
 # Physics
 n      = 3;                  # stress exponent for power law rheology
@@ -18,7 +19,7 @@ Tamp   = 0.1*T0;             # amplitude of initial perturbation
 # Numerics
 nx     = 94;                 # number of cells x
 ny     = nx;                 # number of cells y
-nt     = 1;#54;                 # number time steps
+nt     = 54;                 # number time steps
 nout   = 100;                # check residual each nout iteration
 noutp  = 2;                  # display graphics each nout time step
 niter  = 1e5;                # max nonlinear iterations
@@ -111,23 +112,23 @@ for it in range(nt): # ------ Physical timesteps
         P               = P          + dtauP *dPdtauP;
         T               = T          + dtauT *dTdtauT;
         iter  += 1;
-        if np.mod(iter,nout)==1:
+        if np.mod(iter,nout)==0:
              fp = dPdtauP.flatten(); fT = dTdtauT.flatten(); fu = np.hstack((dVxdtauVx.flatten(), dVydtauVy.flatten()))
              ru = la.norm(fu)/len(fu);
              rp = la.norm(fp)/len(fp);
              rT = la.norm(fT)/len(fT);
              resid = max(max( ru, rp), rT)
              print( ru)
-    # Plot
-    Wtime = tm.time()-tic;
-    print(iter)
-    print(Wtime)
-    Vxc = 0.5*(Vx[0:-1,:] + Vx[1:,:])
-    Vyc = 0.5*(Vy[:,0:-1] + Vy[:,1:])
-    V   = np.sqrt( Vxc**2 + Vyc**2 );
-    plt.figure(1); plt.clf()
-    plt.subplot(221);plt.contourf(xc2, yc2,  Eii2, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
-    plt.subplot(222);plt.contourf(xc2, yc2,     P, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
-    plt.subplot(223);plt.contourf(xc2, yc2,     T, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
-    plt.subplot(224);plt.contourf(xc2, yc2,     V, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
-    plt.show()
+# Plot
+Wtime = tm.time()-tic;
+#print(iter)
+#print(Wtime)
+#Vxc = 0.5*(Vx[0:-1,:] + Vx[1:,:])
+#Vyc = 0.5*(Vy[:,0:-1] + Vy[:,1:])
+#V   = np.sqrt( Vxc**2 + Vyc**2 );
+#plt.figure(1); plt.clf()
+#plt.subplot(221);plt.contourf(xc2, yc2,  Eii2, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
+#plt.subplot(222);plt.contourf(xc2, yc2,     P, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
+#plt.subplot(223);plt.contourf(xc2, yc2,     T, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
+#plt.subplot(224);plt.contourf(xc2, yc2,     V, 256, cmap=plt.cm.jet); plt.axis('image'); plt.colorbar()
+#plt.show()
