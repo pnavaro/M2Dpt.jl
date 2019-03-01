@@ -22,6 +22,7 @@ function vectorized_solve( m :: Mesh, f :: Fields )
     dPdtauP = similar(divV)
     dTdtauT = similar(Hs)
     dtauP   = similar(f.etac)
+    dtauT   = similar(f.etac)
     dtauVx  = zeros(Float64,(nx-1,ny))
     dtauVy  = zeros(Float64,(nx,ny-1))
 
@@ -82,17 +83,17 @@ function vectorized_solve( m :: Mesh, f :: Fields )
 
             # ------ Pseudo-Time steps ------
 
-            dtauP   .= tetp *  4.1 / min(nx,ny)*f.etac*(1.0+eta_b)
+            dtauP   .= tetp .*  4.1 ./ min(nx,ny) .* f.etac .* (1.0+eta_b)
 
-  @views    dtauVx  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ ( 
-                      0.5.*(   f.etac[2:end,:] 
-                           .+  f.etac[1:end-1,:]) ))./(1+eta_b)
+  @views    dtauVx  .= tetv ./ 4.1 .* (min(dx,dy)^2 ./ ( 
+                       0.5 .*(   f.etac[2:end,:] 
+                              .+ f.etac[1:end-1,:]) ))./(1+eta_b)
 
-  @views    dtauVy  .= tetv * 1/4.1 * (min(dx,dy)^2 ./ (
-                       0.5.*(  f.etac[:,2:end] 
-                           .+  f.etac[:,1:end-1]) ))./(1+eta_b)
+  @views    dtauVy  .= tetv ./ 4.1 .* (min(dx,dy)^2 ./ (
+                       0.5 .*(    f.etac[:,2:end] 
+                              .+  f.etac[:,1:end-1]) ))./(1+eta_b)
 
-            dtauT    = tetT * 1/4.1 * min(dx,dy)^2
+            dtauT   .= tetT ./ 4.1 .* min(dx,dy)^2
 
             # ------ Fluxes
 
