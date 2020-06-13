@@ -25,4 +25,3 @@ struct Mesh
     end
 
 end
-
