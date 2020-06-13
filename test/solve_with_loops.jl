@@ -65,19 +65,19 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             #  Kinematics
 
             for i = 1:nx+1
-                f.Vx[i,   1] = f.Vx[i,2]
-                f.Vx[i,ny+2] = f.Vx[i,ny+1]
+                @inbounds f.Vx[i,   1] = f.Vx[i,2]
+                @inbounds f.Vx[i,ny+2] = f.Vx[i,ny+1]
             end
                 
             for j = 1:ny+1
-                f.Vy[1,   j] = f.Vy[2,j]
-                f.Vy[nx+2,j] = f.Vy[nx+1,j]
+                @inbounds f.Vy[1,   j] = f.Vy[2,j]
+                @inbounds f.Vy[nx+2,j] = f.Vy[nx+1,j]
             end
 
             for j = 1:ny, i=1:nx
 
-                dVxdx = (f.Vx[i+1,j+1]-f.Vx[i,j+1])/dx :: Float64
-                dVydy = (f.Vy[i+1,j+1]-f.Vy[i+1,j])/dy :: Float64
+                @inbounds dVxdx = (f.Vx[i+1,j+1]-f.Vx[i,j+1])/dx 
+                @inbounds dVydy = (f.Vy[i+1,j+1]-f.Vy[i+1,j])/dy
 
                 divV[i,j] = dVxdx + dVydy
 
@@ -88,16 +88,16 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             end
 
             for j=1:ny+1, i=1:nx+1
-                Exyv[i,j] = 0.5*(  (f.Vx[i,j+1]-f.Vx[i,j])/dy 
+                @inbounds Exyv[i,j] = 0.5*(  (f.Vx[i,j+1]-f.Vx[i,j])/dy 
                                  + (f.Vy[i+1,j]-f.Vy[i,j])/dx )
             end
 
             for j=1:ny, i=1:nx
-                Exyc = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
+                @inbounds Exyc = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
                             +Exyv[i,j+1]+Exyv[i+1,j+1]) :: Float64
 
                 # strain rate invariant
-                Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc^2 
+                @inbounds Eii2[i,j] = 0.5*(Exxc[i,j]^2 + Eyyc[i,j]^2) + Exyc^2 
             end 
 
 
@@ -115,7 +115,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             fill!(etav,0.0)
 
             for j = 2:ny, i = 2:nx
-                etav[i,j] = 0.25*(f.etac[i-1,j-1]+f.etac[i,j-1]
+                @inbounds etav[i,j] = 0.25*(f.etac[i-1,j-1]+f.etac[i,j-1]
                                  +f.etac[i-1,j  ]+f.etac[i,j  ])
             end
 
@@ -130,17 +130,17 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             # ------ Pseudo-Time steps ------
 
-            for j = 1:ny, i=1:nx 
-                dtauP[i,j]  = tetp *  4.1 / min(nx,ny)*f.etac[i,j]*(1.0+eta_b)
+            @simd for i in eachindex(dtauP)
+                dtauP[i]  = tetp *  4.1 / min(nx,ny)*f.etac[i]*(1.0+eta_b)
             end
 
             for j = 1:ny, i=1:nx-1
-                dtauVx[i,j]  = tetv * 1/4.1 * (min(dx,dy)^2 / ( 
+                @inbounds dtauVx[i,j]  = tetv * 1/4.1 * (min(dx,dy)^2 / ( 
                           0.5*( f.etac[i+1,j] + f.etac[i,j] ) ))/(1+eta_b)
             end
 
             for j = 1:ny-1, i=1:nx
-                dtauVy[i,j] = tetv * 1/4.1 * (min(dx,dy)^2 / (
+                @inbounds dtauVy[i,j] = tetv * 1/4.1 * (min(dx,dy)^2 / (
                            0.5*(  f.etac[i,j+1] + f.etac[i,j]) ))/(1+eta_b)
             end
 
@@ -149,41 +149,41 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # ------ Fluxes
 
             for j=1:ny, i=2:nx
-                f.qx[i,j] = -(f.T[i,j]-f.T[i-1,j])/dx
+                @inbounds f.qx[i,j] = -(f.T[i,j]-f.T[i-1,j])/dx
             end
 
             for j=2:ny, i=1:nx
-                f.qy[i,j] = -(f.T[i,j]-f.T[i,j-1])/dy
+                @inbounds f.qy[i,j] = -(f.T[i,j]-f.T[i,j-1])/dy
             end
 
-            for i in eachindex(Sxx)
-                Sxx[i] = -f.P[i] + 2 * f.etac[i] * (Exxc[i] + eta_b*divV[i])
-                Syy[i] = -f.P[i] + 2 * f.etac[i] * (Eyyc[i] + eta_b*divV[i])
+            @simd for i in eachindex(Sxx)
+                @inbounds Sxx[i] = -f.P[i] + 2 * f.etac[i] * (Exxc[i] + eta_b*divV[i])
+                @inbounds Syy[i] = -f.P[i] + 2 * f.etac[i] * (Eyyc[i] + eta_b*divV[i])
             end
 
-            for i in eachindex(Txy)
-                Txy[i] = 2 * etav[i]  * Exyv[i]
+            @simd for i in eachindex(Txy)
+                @inbounds Txy[i] = 2 * etav[i]  * Exyv[i]
             end
 
-            for i in eachindex(Hs)
-                Hs[i] = 4 * f.etac[i] * Eii2[i]
+            @simd for i in eachindex(Hs)
+                @inbounds Hs[i] = 4 * f.etac[i] * Eii2[i]
             end
 
             # ------ Residuals ----------
 
             for j=1:ny, i=1:nx-1
-                f.dVxdtauVx[i,j] = ((Txy[i+1,j+1]-Txy[i+1,j])/dy 
+                @inbounds f.dVxdtauVx[i,j] = ((Txy[i+1,j+1]-Txy[i+1,j])/dy 
                                  + (Sxx[i+1,j]-Sxx[i,j])/dx)
             end
 
             for j=1:ny-1, i=1:nx
-                f.dVydtauVy[i,j] = ((Txy[i+1,j+1]-Txy[i,j+1])/dx 
+                @inbounds f.dVydtauVy[i,j] = ((Txy[i+1,j+1]-Txy[i,j+1])/dx 
                                  + (Syy[i,j+1]-Syy[i,j])/dy)
             end
 
             for j=1:ny, i=1:nx
-                dPdtauP[i,j] = - divV[i,j]
-                dTdtauT[i,j] = ((To[i,j]-f.T[i,j])/dtT 
+                @inbounds dPdtauP[i,j] = - divV[i,j]
+                @inbounds dTdtauT[i,j] = ((To[i,j]-f.T[i,j])/dtT 
                                - ((f.qx[i+1,j]-f.qx[i,j])/dx 
                                 + (f.qy[i,j+1]-f.qy[i,j])/dy) 
                                + Hs[i,j])
@@ -191,18 +191,13 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # ------ Updates ------------
 
             # update with damping
-            for j = 1:ny
-                for i = 1:nx-1
-                    f.Vx[i+1,j+1] += dtauVx[i,j] * (f.dVxdtauVx[i,j] 
+            for j = 1:ny, i = 1:nx-1
+                 @inbounds f.Vx[i+1,j+1] += dtauVx[i,j] * (f.dVxdtauVx[i,j] 
                                          + dampx*f.dVxdtauVx0[i,j]) 
-                end
             end
            
-            for j = 1:ny-1
-                for i = 1:nx
-                    f.Vy[i+1,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] 
-                                         + dampy*f.dVydtauVy0[i,j])
-                end
+            for j = 1:ny-1, i = 1:nx
+                @inbounds f.Vy[i+1,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] + dampy*f.dVydtauVy0[i,j])
             end
 
             f.P .+= dtauP .* dPdtauP
@@ -216,18 +211,19 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 err_fT = norm(dTdtauT)/length(dTdtauT)
                 err    = [err_fu, err_fp, err_fT]
                 if max(err...) < epsi
+                    println("-------------------------")
+                    @printf(" iter  = %d    \n", iter  )
+                    @printf(" f_{u} = %1.3e \n", err_fu)
+                    @printf(" f_{p} = %1.3e \n", err_fp)
+                    @printf(" f_{T} = %1.3e \n", err_fT)
                     break
                 end
 
-                println("-------------------------")
-                @printf(" iter  = %d    \n", iter  )
-                @printf(" f_{u} = %1.3e \n", err_fu)
-                @printf(" f_{p} = %1.3e \n", err_fp)
-                @printf(" f_{T} = %1.3e \n", err_fT)
 
             end
 
         end
+
 
 
     end
@@ -239,4 +235,3 @@ mesh = Mesh( Lx, nx, Ly, ny)
 fields = Fields( mesh, Vbc, r, Tamp )
 
 @time solve_with_loops( mesh, fields )
-
