@@ -1,6 +1,6 @@
 using LinearAlgebra
 
-mutable struct Fields
+struct Fields
 
     Vx         ::  Array{Float64,2}
     Vy         ::  Array{Float64,2}
