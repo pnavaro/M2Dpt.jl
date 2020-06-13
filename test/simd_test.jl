@@ -9,11 +9,11 @@ end
 function deriv!(u::Vector, du)
     n = length(u)
     dx = 1.0 / (n-1)
-    @fastmath @inbounds du[1] = (u[2] - u[1]) / dx
-    @fastmath @inbounds @simd for i in 2:n-1
-        du[i] = (u[i+1] - u[i-1]) / (2*dx)
+    du[1] = (u[2] - u[1]) / dx
+    @fastmath @simd for i in 2:n-1
+        @inbounds du[i] = (u[i+1] - u[i-1]) / (2*dx)
     end
-    @fastmath @inbounds du[n] = (u[n] - u[n-1]) / dx
+    @fastmath du[n] = (u[n] - u[n-1]) / dx
 end
 
 function mynorm(u::Vector)
