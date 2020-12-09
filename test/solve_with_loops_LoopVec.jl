@@ -1,3 +1,4 @@
+using LoopVectorization
 using LinearAlgebra
 
 #==
@@ -12,7 +13,7 @@ using LinearAlgebra
 """
 ==#
 
-function solve_with_loops( m :: Mesh, f :: Fields )
+function solve_with_loops_v2( m :: Mesh, f :: Fields )
 
     time   = 0.0
     dx, dy = m.dx, m.dy
@@ -46,10 +47,10 @@ function solve_with_loops( m :: Mesh, f :: Fields )
         for iter = 1:niter # Pseudo-Transient cycles
 
             # used for damping x momentum residuals
-            f.dVxdtauVx0 .= f.dVxdtauVx .+ dampx .* f.dVxdtauVx0
+            @avx f.dVxdtauVx0 .= f.dVxdtauVx .+ dampx .* f.dVxdtauVx0
 
             # used for damping y momentum residuals
-            f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0
+            @avx f.dVydtauVy0 .= f.dVydtauVy .+ dampy .* f.dVydtauVy0
 
             #  Kinematics
 
@@ -66,7 +67,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
                 f.Vy[nx+2,j] = f.Vy[nx+1,j]
             end
 
-            for j = 1:ny, i=1:nx
+            @avx for j = 1:ny, i=1:nx
 
                 dVxdx = (f.Vx[i+1,j+1]-f.Vx[i,j+1])/dx
                 dVydy = (f.Vy[i+1,j+1]-f.Vy[i+1,j])/dy
@@ -79,12 +80,12 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             end
 
-            for j=1:ny+1, i=1:nx+1
+            @avx for j=1:ny+1, i=1:nx+1
                 Exyv[i,j] = 0.5*(  (f.Vx[i,j+1]-f.Vx[i,j])/dy
                                  + (f.Vy[i+1,j]-f.Vy[i,j])/dx )
             end
 
-            for j=1:ny, i=1:nx
+            @avx for j=1:ny, i=1:nx
                 Exyc = 0.25*(Exyv[i,j  ]+Exyv[i+1,j  ]
                             +Exyv[i,j+1]+Exyv[i+1,j+1])
 
@@ -94,7 +95,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
 
             # ------ Rheology
-            for i in eachindex(Eii2)
+            @avx for i in eachindex(Eii2)
 
                  # physical viscosity
                  etac_phys = Eii2[i]^mpow*exp(-f.T[i]*(1/(1+f.T[i]/T0)))
@@ -106,7 +107,7 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # expand viscosity fom cell centroids to vertices
             fill!(etav,0.0)
 
-            for j = 2:ny, i = 2:nx
+            @avx for j = 2:ny, i = 2:nx
                 etav[i,j] = 0.25*(f.etac[i-1,j-1]+f.etac[i,j-1]
                                  +f.etac[i-1,j  ]+f.etac[i,j  ])
             end
@@ -122,16 +123,16 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             # ------ Pseudo-Time steps ------
 
-            @simd for i in eachindex(dtauP)
+            @avx for i in eachindex(dtauP)
                 dtauP[i]  = tetp *  4.1 / min(nx,ny)*f.etac[i]*(1.0+eta_b)
             end
 
-            for j = 1:ny, i=1:nx-1
+            @avx for j = 1:ny, i=1:nx-1
                 dtauVx[i,j]  = tetv * 1/4.1 * (min(dx,dy)^2 / (
                           0.5*( f.etac[i+1,j] + f.etac[i,j] ) ))/(1+eta_b)
             end
 
-            for j = 1:ny-1, i=1:nx
+            @avx for j = 1:ny-1, i=1:nx
                 dtauVy[i,j] = tetv * 1/4.1 * (min(dx,dy)^2 / (
                            0.5*(  f.etac[i,j+1] + f.etac[i,j]) ))/(1+eta_b)
             end
@@ -140,42 +141,42 @@ function solve_with_loops( m :: Mesh, f :: Fields )
 
             # ------ Fluxes
 
-            for j=1:ny, i=2:nx
+            @avx for j=1:ny, i=2:nx
                 f.qx[i,j] = -(f.T[i,j]-f.T[i-1,j])/dx
             end
 
-            for j=2:ny, i=1:nx
+            @avx for j=2:ny, i=1:nx
                 f.qy[i,j] = -(f.T[i,j]-f.T[i,j-1])/dy
             end
 
-            @simd for i in eachindex(Sxx)
+            @avx  for i in eachindex(Sxx)
                 Sxx[i] = -f.P[i] + 2 * f.etac[i] * (Exxc[i] + eta_b*divV[i])
             end
-            @simd for i in eachindex(Syy)
+            @avx  for i in eachindex(Syy)
                 Syy[i] = -f.P[i] + 2 * f.etac[i] * (Eyyc[i] + eta_b*divV[i])
             end
 
-            @simd for i in eachindex(Txy)
+            @avx  for i in eachindex(Txy)
                 Txy[i] = 2 * etav[i]  * Exyv[i]
             end
 
-            @simd for i in eachindex(Hs)
+            @avx  for i in eachindex(Hs)
                 Hs[i] = 4 * f.etac[i] * Eii2[i]
             end
 
             # ------ Residuals ----------
 
-            for j=1:ny, i=1:nx-1
+            @avx for j=1:ny, i=1:nx-1
                 f.dVxdtauVx[i,j] = ((Txy[i+1,j+1]-Txy[i+1,j])/dy
                                  + (Sxx[i+1,j]-Sxx[i,j])/dx)
             end
 
-            for j=1:ny-1, i=1:nx
+            @avx for j=1:ny-1, i=1:nx
                 f.dVydtauVy[i,j] = ((Txy[i+1,j+1]-Txy[i,j+1])/dx
                                  + (Syy[i,j+1]-Syy[i,j])/dy)
             end
 
-            for j=1:ny, i=1:nx
+            @avx for j=1:ny, i=1:nx
                 dPdtauP[i,j] = - divV[i,j]
                 dTdtauT[i,j] = ((To[i,j]-f.T[i,j])/dtT
                                - ((f.qx[i+1,j]-f.qx[i,j])/dx
@@ -185,20 +186,20 @@ function solve_with_loops( m :: Mesh, f :: Fields )
             # ------ Updates ------------
 
             # update with damping
-            for j = 1:ny, i = 1:nx-1
+            @avx for j = 1:ny, i = 1:nx-1
                  f.Vx[i+1,j+1] += dtauVx[i,j] * (f.dVxdtauVx[i,j]
                                          + dampx*f.dVxdtauVx0[i,j])
             end
 
-            for j = 1:ny-1, i = 1:nx
+            @avx for j = 1:ny-1, i = 1:nx
                 f.Vy[i+1,j+1] += dtauVy[i,j] * (f.dVydtauVy[i,j] + dampy*f.dVydtauVy0[i,j])
             end
 
             # f.P .+= dtauP .* dPdtauP
             # f.T .+= dtauT .* dTdtauT
 
-            f.P .= f.P .+ dtauP .* dPdtauP
-            f.T .= f.T .+ dtauT .* dTdtauT
+            @avx f.P .= f.P .+ dtauP .* dPdtauP
+            @avx f.T .= f.T .+ dtauT .* dTdtauT
 
 
             if (iter % nout ==0) # Check
