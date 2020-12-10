@@ -1,4 +1,62 @@
-@views function vectorized_solve( m :: Mesh, f :: Fields )
+## This is a trick to make a lazy `diff` which does not allocate in broedcasts:
+struct Diff{T,N,DIMS} <: AbstractArray{T,N}
+    a::Array{T,N}
+end
+# Note that using the keyword constructor can lead to allocations in some instances as the
+# compiler can then fail to infer DIMS
+@inline Diff(a::A; dims=1) where A<:AbstractArray{T,N} where {T,N} = Diff{T,N,dims}(a)
+@inline Diff(a::A, dims=1) where A<:AbstractArray{T,N} where {T,N} = Diff{T,N,dims}(a)
+
+# define array interface
+# https://docs.julialang.org/en/v1/manual/interfaces/
+# follows how views are implemented in Base. E.g.
+# https://github.com/JuliaLang/julia/blob/aa2a35a3cadde1f77b8d5816ca0e59c5637c16cc/base/subarray.jl#L263
+@inline Base.IndexStyle(::Type{<:Diff}) = IndexCartesian()
+
+@inline function Base.size(D::Diff{T,N,DIMS}) where {T,N,DIMS}
+    sz = size(D.a)
+    return tupledec(sz, DIMS)
+end
+
+@inline function Base.getindex(D::Diff{T,N,DIMS}, I::Vararg{Int, N}) where {T,N,DIMS}
+    @boundscheck checkbounds(D, I...)
+    a = D.a
+    dI = tupleinc(I, DIMS)
+    @inbounds r = a[dI...] - a[I...]
+    return r
+end
+
+"Increment number at index i of tuple"
+tupleinc(t::Tuple, i) = tupleadd(t, i, 1)
+"Decrement number at index i of tuple"
+tupledec(t::Tuple, i) = tupleadd(t, i, -1)
+
+"Add number to tuple at one index"
+function tupleadd end
+tupleadd(t::NTuple{1}, i, n) = (t[1]+n,)
+tupleadd(t::NTuple{2}, i, n) = i==1 ? (t[1]+n, t[2]) : (t[1], t[2]+n)
+function tupleadd(t::NTuple{3}, i, n)
+    if i==1
+        (t[1]+n, t[2], t[3])
+    elseif i==2
+        (t[1], t[2]+n, t[3])
+    else
+        (t[1], t[2], t[3]+n)
+    end
+end
+function tupleadd(t::NTuple{4}, i, n)
+    if i==1
+        (t[1]+n, t[2], t[3], t[4])
+    elseif i==2
+        (t[1], t[2]+n, t[3], t[4])
+    elseif i==3
+        (t[1], t[2], t[3]+n, t[4])
+    else
+        (t[1], t[2], t[3], t[4]+n)
+    end
+end
+
+@views function vectorized_solve_v2( m :: Mesh, f :: Fields )
 
     time   = 0.0
     dx, dy = m.dx, m.dy
@@ -15,7 +73,7 @@
     Exxc    = zeros(Float64,(nx,ny))
     Eyyc    = zeros(Float64,(nx,ny))
     Eii2    = zeros(Float64,(nx,ny))
-    etac_phys= zeros(Float64,(nx,ny))
+    etac_phys = zeros(Float64,(nx,ny))
     Sxx     = zeros(Float64,(nx,ny))
     Syy     = zeros(Float64,(nx,ny))
     Txy     = similar(Exyv)
@@ -49,13 +107,13 @@
             f.Vy[  1,  :] .= f.Vy[    2,    :]
             f.Vy[end,  :] .= f.Vy[end-1,    :]
 
-            divV .= (diff(f.Vx[:,2:end-1],dims=1) ./ dx
-                  .+ diff(f.Vy[2:end-1,:],dims=2) ./ dy)
+            divV .= (Diff(f.Vx,1)[:,2:end-1] ./ dx
+                  .+ Diff(f.Vy,2)[2:end-1,:] ./ dy)
 
-            Exxc .= diff(f.Vx[:,2:end-1],dims=1) ./ dx .- 1/2 .* divV
-            Eyyc .= diff(f.Vy[2:end-1,:],dims=2) ./ dy .- 1/2 .* divV
+            Exxc .= Diff(f.Vx,1)[:,2:end-1] ./ dx .- 1/2 .* divV
+            Eyyc .= Diff(f.Vy,2)[2:end-1,:] ./ dy .- 1/2 .* divV
 
-            Exyv .= 0.5 .* (diff(f.Vx,dims=2)./dy .+ diff(f.Vy,dims=1)./dx)
+            Exyv .= 0.5 .* (Diff(f.Vx,2)./dy .+ Diff(f.Vy,1)./dx)
 
             Exyc .= 0.25 .* ( Exyv[1:end-1,1:end-1] .+
                               Exyv[2:end  ,1:end-1] .+
@@ -83,7 +141,7 @@
             # this cannot be handled as views
             # etav[:      ,[1, end]] .= etav[:        ,[2, end-1]]
             # etav[[1, end],:      ] .= etav[[2, end-1],:        ]
-            # thus break it up:
+            # thus break it up (but it does not really impact performance):
             etav[:, 1]   .= etav[:, 2]
             etav[:, end] .= etav[:, end-1]
             etav[1, :]   .= etav[2, :]
@@ -105,8 +163,8 @@
 
             # ------ Fluxes
 
-            f.qx[2:end-1,:] .= .- diff(f.T,dims=1) ./ dx
-            f.qy[:,2:end-1] .= .- diff(f.T,dims=2) ./ dy
+            f.qx[2:end-1,:] .= .- Diff(f.T,1) ./ dx
+            f.qy[:,2:end-1] .= .- Diff(f.T,2) ./ dy
 
             Sxx .= .-f.P .+ 2 .* f.etac .* (Exxc .+ eta_b .* divV)
             Syy .= .-f.P .+ 2 .* f.etac .* (Eyyc .+ eta_b .* divV)
@@ -116,14 +174,14 @@
 
             # ------ Residuals
 
-            f.dVxdtauVx .= (  diff(Txy[2:end-1,:],dims=2)./dy
-                           .+ diff(Sxx,dims=1)./dx)
-            f.dVydtauVy .= (  diff(Txy[:,2:end-1],dims=1)./dx
-                           .+ diff(Syy,dims=2)./dy)
+            f.dVxdtauVx .= (  Diff(Txy,2)[2:end-1,:]./dy
+                           .+ Diff(Sxx,1)./dx)
+            f.dVydtauVy .= (  Diff(Txy,1)[:,2:end-1]./dx
+                           .+ Diff(Syy,2)./dy)
 
             dPdtauP    .= - divV
-            dTdtauT    .= (To.-f.T)./dtT .- (diff(f.qx,dims=1)./dx
-                                         .+  diff(f.qy,dims=2)./dy) .+ Hs
+            dTdtauT    .= (To.-f.T)./dtT .- (Diff(f.qx,1)./dx
+                                         .+  Diff(f.qy,2)./dy) .+ Hs
             # ------ Updates
 
             # update with damping
