@@ -6,8 +6,7 @@ Julia version of the matlab script `TM2Dpt_GJI.m`
 
 https://doi.org/10.1093/gji/ggy434.
 
-**Update**: Timing comparisons below made in 2018 are obsolete. You can see great improvements made by Julia language itself and @mauro3 . Check the PR https://github.com/pnavaro/M2Dpt.jl/pull/2 to see details.
-
+**Update**: Timing comparisons below made in 2018 are obsolete. You can see great improvements made by Julia language itself and [@mauro3](https://github.com/mauro3) fixes. Check the PR https://github.com/pnavaro/M2Dpt.jl/pull/2 to see details.
 
 
 Timing are made on one computer (Mac Pro 2013)
